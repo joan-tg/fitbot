@@ -59,8 +59,7 @@ def run(config, now=None, client_class=None):
         proxy=os.environ.get("PROXY") or None,
     )
     dry_run = (
-        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower()
-        == "true"
+        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower() == "true"
     )
 
     for booking in due_bookings:
