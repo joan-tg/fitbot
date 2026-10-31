@@ -3,7 +3,7 @@
   "box_name": "studiocrossfit",
   "box_id": 9507,
   "family_id": null,
-  "dry_run": true,
+  "dry_run": false,
   "window_minutes": 30,
   "bookings": [
     {
