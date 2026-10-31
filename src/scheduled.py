@@ -102,7 +102,11 @@ def run(config, now=None, client_class=None):
             continue
 
         try:
-            client.book_class(target_day, selected_class["id"], config.get("family_id"))
+            client.book_class(
+                target_day,
+                selected_class["id"],
+                config.get("family_id"),
+            )
             logger.info(
                 "Booking request sent: %s %s on %s",
                 booking["time"],
