@@ -5,8 +5,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from api.book import _find_configured_booking
-from scheduled import parse_local_datetime
+from api.book import _find_configured_booking, _is_booking_due
 
 
 def test_webhook_only_accepts_a_booking_present_in_config():
@@ -35,11 +34,19 @@ def test_webhook_rejects_modified_or_unknown_booking():
     assert _find_configured_booking(config, {"date": "2026-11-05"}) is None
 
 
-def test_booking_window_is_limited_to_configured_30_minutes():
+def test_booking_window_starts_at_opening_and_ends_after_30_minutes():
     timezone = ZoneInfo("Europe/Madrid")
     booking = {"opens_at": "2026-11-01T17:15:00"}
-    opens_at = parse_local_datetime(booking["opens_at"], timezone)
 
-    assert datetime(2026, 11, 1, 17, 15, tzinfo=timezone) - opens_at == (
-        datetime(2026, 11, 1, 17, 15, tzinfo=timezone) - opens_at
+    assert _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 15, tzinfo=timezone), 30
+    )
+    assert _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 45, tzinfo=timezone), 30
+    )
+    assert not _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 14, 59, tzinfo=timezone), 30
+    )
+    assert not _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 45, 1, tzinfo=timezone), 30
     )
