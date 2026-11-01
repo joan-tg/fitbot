@@ -105,19 +105,36 @@ def test_post_with_valid_signature_runs_one_booking_in_dry_run(monkeypatch):
     body = json.dumps(booking).encode("utf-8")
     monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
-    monkeypatch.setattr(book_api, "load_config", lambda path: {
-        "timezone": "Europe/Madrid", "window_minutes": 30, "bookings": [booking]
-    })
-    monkeypatch.setattr(book_api, "datetime", type("FixedDateTime", (), {
-        "now": staticmethod(lambda timezone: datetime(2026, 11, 1, 17, 20, tzinfo=timezone))
-    }))
+    monkeypatch.setattr(
+        book_api,
+        "load_config",
+        lambda path: {
+            "timezone": "Europe/Madrid",
+            "window_minutes": 30,
+            "bookings": [booking],
+        },
+    )
+    fixed_datetime = type(
+        "FixedDateTime",
+        (),
+        {
+            "now": staticmethod(
+                lambda timezone: datetime(2026, 11, 1, 17, 20, tzinfo=timezone)
+            )
+        },
+    )
+    monkeypatch.setattr(book_api, "datetime", fixed_datetime)
     calls = []
-    monkeypatch.setattr(book_api, "run", lambda config, now: (
-        calls.append(config) or {
-            "status": "completed", "processed": 1,
+
+    def fake_run(config, now):
+        calls.append(config)
+        return {
+            "status": "completed",
+            "processed": 1,
             "outcomes": [{"status": "dry_run", "booking": booking}],
         }
-    ))
+
+    monkeypatch.setattr(book_api, "run", fake_run)
 
     request = FakeHandler(body)
     response = request.post()
