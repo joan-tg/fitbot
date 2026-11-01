@@ -20,3 +20,6 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
+
+[tool.vercel]
+entrypoint = "api.book:handler"
