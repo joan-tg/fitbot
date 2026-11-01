@@ -51,7 +51,8 @@ def config():
 def test_does_nothing_before_opening_without_credentials(monkeypatch):
     monkeypatch.delenv("EMAIL", raising=False)
     monkeypatch.delenv("PASSWORD", raising=False)
-    scheduled.run(config(), now=datetime(2026, 11, 1, 17, 14, tzinfo=TZ))
+    result = scheduled.run(config(), now=datetime(2026, 11, 1, 17, 14, tzinfo=TZ))
+    assert result == {"status": "not_due", "processed": 0}
 
 
 def test_due_booking_uses_dry_run_by_default(monkeypatch, caplog):
@@ -66,7 +67,7 @@ def test_due_booking_uses_dry_run_by_default(monkeypatch, caplog):
         clients.append(client)
         return client
 
-    scheduled.run(
+    result = scheduled.run(
         config(),
         now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
         client_class=factory,
@@ -74,6 +75,30 @@ def test_due_booking_uses_dry_run_by_default(monkeypatch, caplog):
 
     assert len(clients) == 1
     assert "DRY RUN: would book 17:15 Weightlifting" in caplog.text
+    assert clients[0].book_calls == []
+    assert result["outcomes"][0]["status"] == "dry_run"
+
+
+def test_environment_dry_run_true_overrides_live_repository_config(monkeypatch):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("DRY_RUN", "true")
+    live_config = config()
+    live_config["dry_run"] = False
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        live_config,
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "dry_run"
     assert clients[0].book_calls == []
 
 
@@ -93,12 +118,13 @@ def test_already_booked_class_is_not_booked(monkeypatch):
             ]
 
     client = AlreadyBookedClient()
-    scheduled.run(
+    result = scheduled.run(
         config(),
         now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
         client_class=lambda **kwargs: client,
     )
     assert client.book_calls == []
+    assert result["outcomes"][0]["status"] == "already_booked"
 
 
 def test_naive_now_is_rejected():
