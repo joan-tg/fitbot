@@ -130,3 +130,48 @@ def test_already_booked_class_is_not_booked(monkeypatch):
 def test_naive_now_is_rejected():
     with pytest.raises(ValueError, match="timezone"):
         scheduled.run(config(), now=datetime(2026, 11, 1, 17, 20))
+
+
+@pytest.mark.parametrize("value", ["0", "no", "", "False-ish"])
+def test_unrecognized_environment_values_keep_dry_run_enabled(monkeypatch, value):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("DRY_RUN", value)
+    live_config = config()
+    live_config["dry_run"] = False
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        live_config,
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "dry_run"
+    assert clients[0].book_calls == []
+
+
+def test_only_explicit_false_enables_live_booking(monkeypatch):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("DRY_RUN", "false")
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        config(),
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "booking_requested"
+    assert len(clients[0].book_calls) == 1
