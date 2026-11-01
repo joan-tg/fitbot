@@ -73,6 +73,12 @@ def _find_configured_booking(config, payload):
     return None
 
 
+def _is_booking_due(booking, timezone, now, window_minutes):
+    opens_at = parse_local_datetime(booking["opens_at"], timezone)
+    elapsed = now - opens_at
+    return timedelta(0) <= elapsed <= timedelta(minutes=window_minutes)
+
+
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
@@ -108,10 +114,8 @@ class handler(BaseHTTPRequestHandler):
 
             timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
             now = datetime.now(timezone)
-            opens_at = parse_local_datetime(booking["opens_at"], timezone)
-            elapsed = now - opens_at
-            window = timedelta(minutes=int(config.get("window_minutes", 30)))
-            if elapsed < timedelta(0) or elapsed > window:
+            window_minutes = int(config.get("window_minutes", 30))
+            if not _is_booking_due(booking, timezone, now, window_minutes):
                 return _response(
                     self,
                     409,
@@ -120,7 +124,7 @@ class handler(BaseHTTPRequestHandler):
                         "date": booking["date"],
                         "time": booking["time"],
                         "opens_at": booking["opens_at"],
-                        "window_minutes": int(config.get("window_minutes", 30)),
+                        "window_minutes": window_minutes,
                     },
                 )
 
