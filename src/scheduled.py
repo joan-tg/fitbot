@@ -58,8 +58,9 @@ def run(config, now=None, client_class=None):
         box_name=config["box_name"],
         proxy=os.environ.get("PROXY") or None,
     )
+    # Fail closed: only the literal value "false" enables live bookings.
     dry_run = (
-        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower() == "true"
+        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower() != "false"
     )
     outcomes = []
 
