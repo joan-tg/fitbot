@@ -8,6 +8,7 @@ Required environment variables:
 DRY_RUN defaults to true. Set DRY_RUN=false only after a successful end-to-end
 simulation and explicit activation of live bookings.
 """
+
 import json
 import logging
 import os
