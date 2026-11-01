@@ -41,13 +41,13 @@ def run(config, now=None, client_class=None):
 
     if not due_bookings:
         logger.info("No bookings are due in the current time window.")
-        return
+        return {"status": "not_due", "processed": 0}
 
     email = os.environ.get("EMAIL")
     password = os.environ.get("PASSWORD")
     if not email or not password:
         raise RuntimeError(
-            "EMAIL and PASSWORD must be configured as GitHub Actions secrets."
+            "EMAIL and PASSWORD must be configured as environment variables."
         )
 
     client_class = client_class or AimHarderClient
@@ -58,9 +58,11 @@ def run(config, now=None, client_class=None):
         box_name=config["box_name"],
         proxy=os.environ.get("PROXY") or None,
     )
+    # Fail closed: only the literal value "false" enables live bookings.
     dry_run = (
-        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower() == "true"
+        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower() != "false"
     )
+    outcomes = []
 
     for booking in due_bookings:
         target_day = datetime.combine(
@@ -79,6 +81,7 @@ def run(config, now=None, client_class=None):
                 booking["date"],
                 error,
             )
+            outcomes.append({"status": "class_not_found", "booking": booking})
             continue
 
         if selected_class.get("bookState") == 1:
@@ -88,6 +91,7 @@ def run(config, now=None, client_class=None):
                 class_name,
                 booking["date"],
             )
+            outcomes.append({"status": "already_booked", "booking": booking})
             continue
 
         if dry_run:
@@ -98,6 +102,7 @@ def run(config, now=None, client_class=None):
                 booking["date"],
                 selected_class["id"],
             )
+            outcomes.append({"status": "dry_run", "booking": booking})
             continue
 
         try:
@@ -112,6 +117,7 @@ def run(config, now=None, client_class=None):
                 class_name,
                 booking["date"],
             )
+            outcomes.append({"status": "booking_requested", "booking": booking})
         except BookingFailed as error:
             logger.error(
                 "Booking failed for %s on %s: %s",
@@ -119,6 +125,9 @@ def run(config, now=None, client_class=None):
                 booking["date"],
                 error,
             )
+            outcomes.append({"status": "booking_failed", "booking": booking})
+
+    return {"status": "completed", "processed": len(outcomes), "outcomes": outcomes}
 
 
 if __name__ == "__main__":
