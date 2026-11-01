@@ -13,7 +13,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from scheduled import load_config, run  # noqa: E402
+from scheduled import load_config, parse_local_datetime, run  # noqa: E402
 
 logger = logging.getLogger("fitbot.vercel")
 
@@ -106,18 +106,35 @@ class handler(BaseHTTPRequestHandler):
                     self, 404, {"error": "Booking is not in reservas.json"}
                 )
 
-            # Fail closed: live booking requires an explicit DRY_RUN=false setting
-            # in the Vercel environment. The repository config alone cannot enable it.
+            timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
+            now = datetime.now(timezone)
+            opens_at = parse_local_datetime(booking["opens_at"], timezone)
+            elapsed = now - opens_at
+            window = timedelta(minutes=int(config.get("window_minutes", 30)))
+            if elapsed < timedelta(0) or elapsed > window:
+                return _response(
+                    self,
+                    409,
+                    {
+                        "status": "outside_window",
+                        "date": booking["date"],
+                        "time": booking["time"],
+                        "opens_at": booking["opens_at"],
+                        "window_minutes": int(config.get("window_minutes", 30)),
+                    },
+                )
+
+            # Fail closed: only the explicit Vercel environment variable can
+            # enable live bookings; the repository config cannot override it.
             config["bookings"] = [booking]
             config["dry_run"] = os.environ.get("DRY_RUN", "true").lower() != "false"
-
-            timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
-            run(config, now=datetime.now(timezone))
+            result = run(config, now=now)
+            outcome = result.get("outcomes", [{}])[0].get("status", result["status"])
             return _response(
                 self,
                 200,
                 {
-                    "status": "processed",
+                    "status": outcome,
                     "date": booking["date"],
                     "time": booking["time"],
                     "class": booking["name"],
