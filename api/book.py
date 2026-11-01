@@ -102,7 +102,9 @@ class handler(BaseHTTPRequestHandler):
             config = load_config(ROOT / "reservas.json")
             booking = _find_configured_booking(config, payload)
             if booking is None:
-                return _response(self, 404, {"error": "Booking is not in reservas.json"})
+                return _response(
+                    self, 404, {"error": "Booking is not in reservas.json"}
+                )
 
             # Fail closed: live booking requires an explicit DRY_RUN=false setting
             # in the Vercel environment. The repository config alone cannot enable it.
