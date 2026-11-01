@@ -153,7 +153,10 @@ def test_post_rejects_invalid_signature_before_processing(monkeypatch):
 
     body = json.dumps({"date": "2026-11-04"}).encode("utf-8")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: False)
-    monkeypatch.setattr(book_api, "run", lambda *args, **kwargs: pytest.fail("must not run"))
+    def unexpected_run(*args, **kwargs):
+        pytest.fail("must not run")
+
+    monkeypatch.setattr(book_api, "run", unexpected_run)
     request = FakeHandler(body, signature="invalid")
 
     response = request.post()
