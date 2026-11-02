@@ -10,11 +10,54 @@ from logger import logger
 from main import get_class_to_book
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "reservas.json"
+BOOKING_FIELDS = ("date", "opens_at", "time", "name")
+
+
+def validate_config(config):
+    """Reject ambiguous or malformed booking schedules before contacting AimHarder."""
+    if not isinstance(config, dict):
+        raise ValueError("Configuration must be a JSON object")
+    timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
+    window_minutes = int(config.get("window_minutes", 30))
+    if window_minutes <= 0:
+        raise ValueError("window_minutes must be a positive integer")
+    bookings = config.get("bookings")
+    if not isinstance(bookings, list):
+        raise ValueError("bookings must be a list")
+
+    seen = set()
+    for index, booking in enumerate(bookings):
+        if not isinstance(booking, dict):
+            raise ValueError(f"Booking {index} must be an object")
+        missing = [field for field in BOOKING_FIELDS if not booking.get(field)]
+        if missing:
+            raise ValueError(f"Booking {index} is missing: {', '.join(missing)}")
+        try:
+            target_date = date.fromisoformat(booking["date"])
+            datetime.strptime(booking["time"], "%H:%M")
+            opens_at = parse_local_datetime(booking["opens_at"], timezone)
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Booking {index} has an invalid date/time: {error}") from error
+
+        class_starts_at = datetime.combine(
+            target_date, time.fromisoformat(booking["time"]), tzinfo=timezone
+        )
+        if opens_at >= class_starts_at:
+            raise ValueError(f"Booking {index}: opens_at must be before class start")
+        identity = (booking["date"], booking["time"], booking["name"].strip().casefold())
+        if identity in seen:
+            raise ValueError(
+                f"Duplicate booking configured: {booking['date']} {booking['time']} {booking['name']}"
+            )
+        seen.add(identity)
+    return True
 
 
 def load_config(path=CONFIG_PATH):
     with open(path, encoding="utf-8") as config_file:
-        return json.load(config_file)
+        config = json.load(config_file)
+    validate_config(config)
+    return config
 
 
 def parse_local_datetime(value, timezone):
@@ -25,6 +68,7 @@ def parse_local_datetime(value, timezone):
 
 
 def run(config, now=None, client_class=None):
+    validate_config(config)
     timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
     now = now or datetime.now(timezone)
     if now.tzinfo is None:
