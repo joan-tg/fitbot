@@ -27,14 +27,25 @@ jobs:
           test -n "$REDIS_TOKEN"
           BASE="${REDIS_URL%/}"
           KEY="fitbot:connectivity-test:$RANDOM-$RANDOM-$(date +%s)"
+          AUTH="Authorization: Bearer $REDIS_TOKEN"
           cleanup() {
-            curl -fsS -X POST -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/del/$KEY" >/dev/null || true
+            curl -sS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+              --data "[\"DEL\",\"$KEY\"]" "$BASE" >/dev/null || true
           }
           trap cleanup EXIT
-          FIRST=$(curl -fsS -X POST -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/set/$KEY/probe?NX=true&EX=60")
-          echo "$FIRST" | jq -e '.result == "OK"' >/dev/null
-          SECOND=$(curl -fsS -X POST -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/set/$KEY/duplicate?NX=true&EX=60")
-          echo "$SECOND" | jq -e '.result == null' >/dev/null
-          READBACK=$(curl -fsS -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/get/$KEY")
-          echo "$READBACK" | jq -e '.result == "probe"' >/dev/null
+
+          echo "Stage 1/3: SET NX EX"
+          FIRST=$(curl -sS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            --data "[\"SET\",\"$KEY\",\"probe\",\"NX\",\"EX\",60]" "$BASE")
+          echo "$FIRST" | jq -e 'if has("error") then error(.error) else .result == "OK" end' >/dev/null
+
+          echo "Stage 2/3: duplicate SET NX"
+          SECOND=$(curl -sS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            --data "[\"SET\",\"$KEY\",\"duplicate\",\"NX\",\"EX\",60]" "$BASE")
+          echo "$SECOND" | jq -e 'if has("error") then error(.error) else .result == null end' >/dev/null
+
+          echo "Stage 3/3: GET"
+          READBACK=$(curl -sS -H "$AUTH" "$BASE/get/$KEY")
+          echo "$READBACK" | jq -e 'if has("error") then error(.error) else .result == "probe" end' >/dev/null
+
           echo "PASS: Redis authentication, SET NX, EX TTL and GET verified."
