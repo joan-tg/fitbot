@@ -1,5 +1,5 @@
 name: QStash webhook smoke test
-# Safe webhook delivery check after clean Preview redeploy.
+# Preview-only end-to-end Redis probe. Never contacts AimHarder.
 
 on:
   workflow_dispatch:
@@ -15,40 +15,40 @@ permissions:
 jobs:
   publish-test-message:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 4
     steps:
-      - name: Publish a harmless signed test message
+      - name: Publish the same signed probe twice
         env:
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           WEBHOOK_URL: https://fitbot-git-feature-vercel-qstash-webhook-joan-tgs-projects.vercel.app/api/book
+          RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          if [ -z "${QSTASH_TOKEN}" ]; then
-            echo "::error::Repository secret QSTASH_TOKEN is missing or empty."
-            exit 1
-          fi
-          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
-            echo "::error::Repository secret VERCEL_AUTOMATION_BYPASS_SECRET is missing or empty."
-            exit 1
-          fi
+          test -n "$QSTASH_TOKEN" || { echo "::error::QSTASH_TOKEN missing"; exit 1; }
+          test -n "$VERCEL_AUTOMATION_BYPASS_SECRET" || { echo "::error::VERCEL_AUTOMATION_BYPASS_SECRET missing"; exit 1; }
 
-          response_file="$(mktemp)"
-          status_code="$(curl --silent --show-error \
-            --output "$response_file" \
-            --write-out "%{http_code}" \
-            --request POST \
-            --header "Authorization: Bearer ${QSTASH_TOKEN}" \
-            --header "Content-Type: application/json" \
-            --header "Upstash-Retries: 0" \
-            --header "Upstash-Forward-x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
-            --data '{"date":"2099-01-01","opens_at":"2098-12-31T00:00:00","time":"00:00","name":"FITBOT_QSTASH_SMOKE_TEST"}' \
-            "https://qstash.upstash.io/v2/publish/${WEBHOOK_URL}")"
+          payload="$(jq -cn --arg id "$RUN_ID" '{date:$id,time:"probe",name:"FITBOT_QSTASH_REDIS_INTEGRATION_TEST"}')"
+          publish() {
+            local response_file status_code
+            response_file="$(mktemp)"
+            status_code="$(curl --silent --show-error --output "$response_file" --write-out "%{http_code}" \
+              --request POST \
+              --header "Authorization: Bearer $QSTASH_TOKEN" \
+              --header "Content-Type: application/json" \
+              --header "Upstash-Retries: 0" \
+              --header "Upstash-Forward-x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+              --data "$payload" \
+              "https://qstash.upstash.io/v2/publish/$WEBHOOK_URL")"
+            echo "QStash publish HTTP: $status_code"
+            cat "$response_file"
+            test "$status_code" -ge 200 && test "$status_code" -lt 300
+            rm -f "$response_file"
+          }
 
-          echo "QStash publish HTTP status: ${status_code}"
-          cat "$response_file"
-          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
-            echo "::error::QStash did not accept the test message."
-            exit 1
-          fi
-          echo "QStash accepted the test message. Check QStash delivery logs for the webhook response (expected HTTP 404: unknown test booking)."
+          echo "Publishing first delivery (should acquire Redis lock)"
+          publish
+          sleep 3
+          echo "Publishing identical delivery (should be rejected as duplicate by Redis)"
+          publish
+          echo "Both signed messages accepted by QStash. Confirm delivery responses in QStash logs: first integration_test_lock_acquired, second integration_test_duplicate."
