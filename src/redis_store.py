@@ -46,9 +46,7 @@ class UpstashRedis:
 
     def acquire(self, booking, dry_run=False, ttl_seconds=60):
         key = self.booking_key(booking, dry_run=dry_run)
-        result = self._command(
-            ["SET", key, "processing", "NX", "EX", int(ttl_seconds)]
-        )
+        result = self._command(["SET", key, "processing", "NX", "EX", int(ttl_seconds)])
         return result == "OK"
 
     @staticmethod
