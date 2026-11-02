@@ -1,5 +1,5 @@
 name: QStash webhook smoke test
-# Triggered on the feature branch for a safe webhook delivery check (updated lockfile validation).
+# Safe webhook delivery check after clean Preview redeploy.
 
 on:
   workflow_dispatch:
