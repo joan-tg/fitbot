@@ -30,9 +30,11 @@ class UpstashRedis:
     def acquire(self, booking, dry_run=False, ttl_seconds=60):
         key = self.booking_key(booking, dry_run=dry_run)
         try:
+            # Use Upstash's canonical command endpoint. Sending Redis commands
+            # as a JSON array avoids URL/path encoding issues with namespaced keys.
             response = self.session.post(
-                f"{self.url}/set/{key}/processing",
-                params={"NX": "true", "EX": str(ttl_seconds)},
+                self.url,
+                json=["SET", key, "processing", "NX", "EX", int(ttl_seconds)],
                 headers={"Authorization": f"Bearer {self.token}"},
                 timeout=8,
             )
