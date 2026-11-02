@@ -18,6 +18,8 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from qstash import Receiver
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -44,8 +46,6 @@ def _verify_qstash(raw_body, signature):
         raise RuntimeError("QStash signature verification is not configured")
     if not signature:
         return False
-
-    from qstash import Receiver
 
     receiver = Receiver(
         current_signing_key=current_key,
