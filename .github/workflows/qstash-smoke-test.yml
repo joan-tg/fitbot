@@ -1,4 +1,5 @@
 name: QStash webhook smoke test
+# Triggered on the feature branch for a safe webhook delivery check.
 
 on:
   workflow_dispatch:
