@@ -15,7 +15,9 @@ class UpstashRedis:
         self.token = token or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
         self.session = session or requests
         if not self.url or not self.token:
-            raise RedisUnavailable("Upstash Redis credentials are not configured")
+            raise RedisUnavailable(
+                "Upstash Redis credentials are not configured"
+            )
 
     @staticmethod
     def booking_key(booking, dry_run=False):
@@ -38,5 +40,7 @@ class UpstashRedis:
             response.raise_for_status()
             result = response.json().get("result")
         except (requests.RequestException, ValueError, TypeError) as error:
-            raise RedisUnavailable("Could not acquire Redis idempotency lock") from error
+            raise RedisUnavailable(
+                "Could not acquire Redis idempotency lock"
+            ) from error
         return result == "OK"
