@@ -31,19 +31,25 @@ def validate_config(config):
             raise ValueError(f"Booking {index} must be an object")
         missing = [field for field in BOOKING_FIELDS if not booking.get(field)]
         if missing:
-            raise ValueError(f"Booking {index} is missing: {', '.join(missing)}")
+            raise ValueError(
+                f"Booking {index} is missing: {', '.join(missing)}"
+            )
         try:
             target_date = date.fromisoformat(booking["date"])
             datetime.strptime(booking["time"], "%H:%M")
             opens_at = parse_local_datetime(booking["opens_at"], timezone)
         except (TypeError, ValueError) as error:
-            raise ValueError(f"Booking {index} has an invalid date/time: {error}") from error
+            raise ValueError(
+                f"Booking {index} has an invalid date/time: {error}"
+            ) from error
 
         class_starts_at = datetime.combine(
             target_date, time.fromisoformat(booking["time"]), tzinfo=timezone
         )
         if opens_at >= class_starts_at:
-            raise ValueError(f"Booking {index}: opens_at must be before class start")
+            raise ValueError(
+                f"Booking {index}: opens_at must be before class start"
+            )
         identity = (
             booking["date"],
             booking["time"],
@@ -51,7 +57,8 @@ def validate_config(config):
         )
         if identity in seen:
             raise ValueError(
-                f"Duplicate booking configured: {booking['date']} {booking['time']} {booking['name']}"
+                f"Duplicate booking configured: {booking['date']} "
+                f"{booking['time']} {booking['name']}"
             )
         seen.add(identity)
     return True
