@@ -105,15 +105,12 @@ def test_post_with_valid_signature_runs_one_booking_in_dry_run(monkeypatch):
     }
     body = json.dumps(booking).encode("utf-8")
     monkeypatch.setenv("DRY_RUN", "true")
-    monkeypatch.setattr(
-        book_api,
-        "UpstashRedis",
-        lambda: type(
-            "FakeRedis",
-            (),
-            {"acquire": lambda self, booking, dry_run, ttl_seconds: True},
-        )(),
-    )
+
+    class FakeRedis:
+        def acquire(self, booking, dry_run, ttl_seconds):
+            return True
+
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(
         book_api,
@@ -208,15 +205,12 @@ def test_duplicate_webhook_delivery_is_ignored_without_running(monkeypatch):
         },
     )
     monkeypatch.setattr(book_api, "datetime", fixed_datetime)
-    monkeypatch.setattr(
-        book_api,
-        "UpstashRedis",
-        lambda: type(
-            "FakeRedis",
-            (),
-            {"acquire": lambda self, booking, dry_run, ttl_seconds: False},
-        )(),
-    )
+
+    class DuplicateRedis:
+        def acquire(self, booking, dry_run, ttl_seconds):
+            return False
+
+    monkeypatch.setattr(book_api, "UpstashRedis", DuplicateRedis)
     monkeypatch.setattr(
         book_api,
         "run",
