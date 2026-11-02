@@ -83,7 +83,9 @@ class FakeHandler:
         return json.loads(self.wfile.getvalue())
 
 
-def test_preview_integration_probe_acquires_real_redis_lock_without_running_scheduler(monkeypatch):
+def test_preview_integration_probe_acquires_real_redis_lock_without_running_scheduler(
+    monkeypatch,
+):
     import api.book as book_api
 
     payload = json.dumps(
