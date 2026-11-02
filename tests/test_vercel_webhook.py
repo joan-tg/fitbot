@@ -1,8 +1,9 @@
 import sys
-import pytest
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -105,8 +106,13 @@ def test_post_with_valid_signature_runs_one_booking_in_dry_run(monkeypatch):
     body = json.dumps(booking).encode("utf-8")
     monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(
-        book_api, "UpstashRedis",
-        lambda: type("FakeRedis", (), {"acquire": lambda self, booking, dry_run, ttl_seconds: True})(),
+        book_api,
+        "UpstashRedis",
+        lambda: type(
+            "FakeRedis",
+            (),
+            {"acquire": lambda self, booking, dry_run, ttl_seconds: True},
+        )(),
     )
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(
@@ -184,21 +190,39 @@ def test_duplicate_webhook_delivery_is_ignored_without_running(monkeypatch):
     monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(
-        book_api, "load_config",
-        lambda path: {"timezone": "Europe/Madrid", "window_minutes": 30, "bookings": [booking]},
+        book_api,
+        "load_config",
+        lambda path: {
+            "timezone": "Europe/Madrid",
+            "window_minutes": 30,
+            "bookings": [booking],
+        },
     )
     fixed_datetime = type(
-        "FixedDateTime", (),
-        {"now": staticmethod(lambda timezone: datetime(2026, 11, 1, 17, 20, tzinfo=timezone))},
+        "FixedDateTime",
+        (),
+        {
+            "now": staticmethod(
+                lambda timezone: datetime(2026, 11, 1, 17, 20, tzinfo=timezone)
+            )
+        },
     )
     monkeypatch.setattr(book_api, "datetime", fixed_datetime)
     monkeypatch.setattr(
-        book_api, "UpstashRedis",
-        lambda: type("FakeRedis", (), {"acquire": lambda self, booking, dry_run, ttl_seconds: False})(),
+        book_api,
+        "UpstashRedis",
+        lambda: type(
+            "FakeRedis",
+            (),
+            {"acquire": lambda self, booking, dry_run, ttl_seconds: False},
+        )(),
     )
     monkeypatch.setattr(
-        book_api, "run",
-        lambda *args, **kwargs: pytest.fail("duplicate delivery must not run the booking"),
+        book_api,
+        "run",
+        lambda *args, **kwargs: pytest.fail(
+            "duplicate delivery must not run the booking"
+        ),
     )
 
     request = FakeHandler(body)
