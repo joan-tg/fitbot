@@ -138,14 +138,18 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
     ("vercel_env", "dry_run"),
     [("production", "true"), ("preview", "false")],
 )
-def test_integration_probe_is_blocked_outside_safe_preview(monkeypatch, vercel_env, dry_run):
+def test_integration_probe_is_blocked_outside_safe_preview(
+    monkeypatch, vercel_env, dry_run
+):
     import api.book as book_api
 
-    payload = json.dumps({
-        "date": "integration-run-123",
-        "time": "attempt-1",
-        "name": "FITBOT_QSTASH_REDIS_INTEGRATION_TEST",
-    }).encode()
+    payload = json.dumps(
+        {
+            "date": "integration-run-123",
+            "time": "attempt-1",
+            "name": "FITBOT_QSTASH_REDIS_INTEGRATION_TEST",
+        }
+    ).encode()
     monkeypatch.setenv("VERCEL_ENV", vercel_env)
     monkeypatch.setenv("DRY_RUN", dry_run)
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
