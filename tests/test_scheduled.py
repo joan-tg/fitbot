@@ -218,6 +218,6 @@ def test_booking_is_not_due_after_window(monkeypatch):
     monkeypatch.delenv("PASSWORD", raising=False)
     result = scheduled.run(
         config(),
-        now=datetime(2026, 11, 1, 17, 45, tzinfo=TZ),
+        now=datetime(2026, 11, 1, 17, 45, 1, tzinfo=TZ),
     )
     assert result == {"status": "not_due", "processed": 0}
