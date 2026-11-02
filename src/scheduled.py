@@ -179,7 +179,11 @@ def run(config, now=None, client_class=None):
             )
             outcomes.append({"status": "booking_failed", "booking": booking})
 
-    return {"status": "completed", "processed": len(outcomes), "outcomes": outcomes}
+    return {
+        "status": "completed",
+        "processed": len(outcomes),
+        "outcomes": outcomes,
+    }
 
 
 if __name__ == "__main__":
