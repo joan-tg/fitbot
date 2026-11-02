@@ -1,0 +1,42 @@
+name: QStash webhook smoke test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish-test-message:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Publish a harmless signed test message
+        env:
+          QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
+          WEBHOOK_URL: https://fitbot-git-feature-vercel-qstash-webhook-joan-tgs-projects.vercel.app/api/book
+        run: |
+          set -euo pipefail
+          if [ -z "${QSTASH_TOKEN}" ]; then
+            echo "::error::Repository secret QSTASH_TOKEN is missing or empty."
+            exit 1
+          fi
+
+          response_file="$(mktemp)"
+          status_code="$(curl --silent --show-error \
+            --output "$response_file" \
+            --write-out "%{http_code}" \
+            --request POST \
+            --header "Authorization: Bearer ${QSTASH_TOKEN}" \
+            --header "Content-Type: application/json" \
+            --header "Upstash-Retries: 0" \
+            --data '{"date":"2099-01-01","opens_at":"2098-12-31T00:00:00","time":"00:00","name":"FITBOT_QSTASH_SMOKE_TEST"}' \
+            "https://qstash.upstash.io/v2/publish/${WEBHOOK_URL}")"
+
+          echo "QStash publish HTTP status: ${status_code}"
+          cat "$response_file"
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "::error::QStash did not accept the test message."
+            exit 1
+          fi
+          echo "QStash accepted the test message. Check QStash delivery logs for the webhook response (expected HTTP 404: unknown test booking)."
