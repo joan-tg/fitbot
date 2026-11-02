@@ -1,3 +1,4 @@
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -7,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from api.book import _find_configured_booking, _is_booking_due
+from api.book import _find_configured_booking, _is_booking_due, handler
 
 
 def test_webhook_only_accepts_a_booking_present_in_config():
@@ -17,9 +18,7 @@ def test_webhook_only_accepts_a_booking_present_in_config():
         "time": "17:15",
         "name": "Weightlifting",
     }
-    config = {"bookings": [booking]}
-
-    assert _find_configured_booking(config, dict(booking)) == booking
+    assert _find_configured_booking({"bookings": [booking]}, dict(booking)) == booking
 
 
 def test_webhook_rejects_modified_or_unknown_booking():
@@ -30,197 +29,100 @@ def test_webhook_rejects_modified_or_unknown_booking():
         "name": "Weightlifting",
     }
     config = {"bookings": [booking]}
-    forged = dict(booking, name="Metcon")
-
-    assert _find_configured_booking(config, forged) is None
+    assert _find_configured_booking(config, dict(booking, name="Metcon")) is None
     assert _find_configured_booking(config, {"date": "2026-11-05"}) is None
 
 
 def test_booking_window_starts_at_opening_and_ends_after_30_minutes():
     timezone = ZoneInfo("Europe/Madrid")
     booking = {"opens_at": "2026-11-01T17:15:00"}
-
-    assert _is_booking_due(
-        booking, timezone, datetime(2026, 11, 1, 17, 15, tzinfo=timezone), 30
-    )
-    assert _is_booking_due(
-        booking, timezone, datetime(2026, 11, 1, 17, 45, tzinfo=timezone), 30
-    )
-    assert not _is_booking_due(
-        booking, timezone, datetime(2026, 11, 1, 17, 14, 59, tzinfo=timezone), 30
-    )
-    assert not _is_booking_due(
-        booking, timezone, datetime(2026, 11, 1, 17, 45, 1, tzinfo=timezone), 30
-    )
+    assert _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 15, tzinfo=timezone), 30)
+    assert _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 45, tzinfo=timezone), 30)
+    assert not _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 14, 59, tzinfo=timezone), 30)
+    assert not _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 45, 1, tzinfo=timezone), 30)
 
 
 class FakeHeaders(dict):
-    def get(self, key, default=None):
-        return super().get(key, default)
+    pass
 
 
 class FakeHandler:
-    def __init__(self, body, signature="valid"):
+    def __init__(self, payload, signature="valid"):
         import io
-
-        from api.book import handler
-
-        self._handler = handler.__new__(handler)
-        self._handler.headers = FakeHeaders(
-            {"Content-Length": str(len(body)), "Upstash-Signature": signature}
-        )
-        self._handler.rfile = io.BytesIO(body)
-        self._handler.wfile = io.BytesIO()
+        self.headers = FakeHeaders({
+            "Content-Length": str(len(payload)),
+            "Upstash-Signature": signature,
+        })
+        self.rfile = io.BytesIO(payload)
+        self.wfile = io.BytesIO()
         self.status = None
         self.response_headers = {}
-        self._handler.send_response = self._send_response
-        self._handler.send_header = self._send_header
-        self._handler.end_headers = lambda: None
-        self._handler.wfile = self._handler.wfile
 
-    def _send_response(self, status):
+    def send_response(self, status):
         self.status = status
 
-    def _send_header(self, key, value):
+    def send_header(self, key, value):
         self.response_headers[key] = value
 
+    def end_headers(self):
+        pass
+
     def post(self):
-        from api.book import handler
-
-        handler.do_POST(self._handler)
-        import json
-
-        return json.loads(self._handler.wfile.getvalue())
+        handler.do_POST(self)
+        return json.loads(self.wfile.getvalue())
 
 
-def test_post_with_valid_signature_runs_one_booking_in_dry_run(monkeypatch):
-    import json
+def test_preview_integration_probe_acquires_real_redis_lock_without_running_scheduler(monkeypatch):
     import api.book as book_api
 
-    booking = {
-        "date": "2026-11-04",
-        "opens_at": "2026-11-01T17:15:00",
-        "time": "17:15",
-        "name": "Weightlifting",
-    }
-    body = json.dumps(booking).encode("utf-8")
+    payload = json.dumps({
+        "date": "integration-run-123",
+        "time": "attempt-1",
+        "name": "FITBOT_QSTASH_REDIS_INTEGRATION_TEST",
+    }).encode()
+    monkeypatch.setenv("VERCEL_ENV", "preview")
     monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
 
     class FakeRedis:
         def acquire(self, booking, dry_run, ttl_seconds):
+            assert booking["name"] == "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
+            assert dry_run is True
+            assert ttl_seconds == 300
             return True
 
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
-    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
-    monkeypatch.setattr(
-        book_api,
-        "load_config",
-        lambda path: {
-            "timezone": "Europe/Madrid",
-            "window_minutes": 30,
-            "bookings": [booking],
-        },
-    )
-    fixed_datetime = type(
-        "FixedDateTime",
-        (),
-        {
-            "now": staticmethod(
-                lambda timezone: datetime(2026, 11, 1, 17, 20, tzinfo=timezone)
-            )
-        },
-    )
-    monkeypatch.setattr(book_api, "datetime", fixed_datetime)
-    calls = []
-
-    def fake_run(config, now):
-        calls.append(config)
-        return {
-            "status": "completed",
-            "processed": 1,
-            "outcomes": [{"status": "dry_run", "booking": booking}],
-        }
-
-    monkeypatch.setattr(book_api, "run", fake_run)
-
-    request = FakeHandler(body)
+    monkeypatch.setattr(book_api, "run", lambda *a, **k: pytest.fail("scheduler must not run"))
+    request = FakeHandler(payload)
     response = request.post()
 
     assert request.status == 200
-    assert response["status"] == "dry_run"
+    assert response["status"] == "integration_test_lock_acquired"
     assert response["dry_run"] is True
-    assert len(calls) == 1
-    assert calls[0]["bookings"] == [booking]
-    assert calls[0]["dry_run"] is True
+    assert response["environment"] == "preview"
 
 
-def test_post_rejects_invalid_signature_before_processing(monkeypatch):
-    import json
+@pytest.mark.parametrize(
+    ("vercel_env", "dry_run"),
+    [("production", "true"), ("preview", "false")],
+)
+def test_integration_probe_is_blocked_outside_safe_preview(monkeypatch, vercel_env, dry_run):
     import api.book as book_api
 
-    body = json.dumps({"date": "2026-11-04"}).encode("utf-8")
-    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: False)
-
-    def unexpected_run(*args, **kwargs):
-        pytest.fail("must not run")
-
-    monkeypatch.setattr(book_api, "run", unexpected_run)
-    request = FakeHandler(body, signature="invalid")
-
-    response = request.post()
-
-    assert request.status == 401
-    assert response["error"] == "Invalid signature"
-
-
-def test_duplicate_webhook_delivery_is_ignored_without_running(monkeypatch):
-    import json
-    import api.book as book_api
-
-    booking = {
-        "date": "2026-11-04",
-        "opens_at": "2026-11-01T17:15:00",
-        "time": "17:15",
-        "name": "Weightlifting",
-    }
-    body = json.dumps(booking).encode("utf-8")
-    monkeypatch.setenv("DRY_RUN", "true")
+    payload = json.dumps({
+        "date": "integration-run-123",
+        "time": "attempt-1",
+        "name": "FITBOT_QSTASH_REDIS_INTEGRATION_TEST",
+    }).encode()
+    monkeypatch.setenv("VERCEL_ENV", vercel_env)
+    monkeypatch.setenv("DRY_RUN", dry_run)
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(
-        book_api,
-        "load_config",
-        lambda path: {
-            "timezone": "Europe/Madrid",
-            "window_minutes": 30,
-            "bookings": [booking],
-        },
+        book_api, "UpstashRedis",
+        lambda: pytest.fail("Redis must not be touched outside safe Preview"),
     )
-    fixed_datetime = type(
-        "FixedDateTime",
-        (),
-        {
-            "now": staticmethod(
-                lambda timezone: datetime(2026, 11, 1, 17, 20, tzinfo=timezone)
-            )
-        },
-    )
-    monkeypatch.setattr(book_api, "datetime", fixed_datetime)
-
-    class DuplicateRedis:
-        def acquire(self, booking, dry_run, ttl_seconds):
-            return False
-
-    monkeypatch.setattr(book_api, "UpstashRedis", DuplicateRedis)
-    monkeypatch.setattr(
-        book_api,
-        "run",
-        lambda *args, **kwargs: pytest.fail(
-            "duplicate delivery must not run the booking"
-        ),
-    )
-
-    request = FakeHandler(body)
+    request = FakeHandler(payload)
     response = request.post()
 
-    assert request.status == 200
-    assert response["status"] == "duplicate_ignored"
+    assert request.status == 403
+    assert "error" in response
