@@ -46,12 +46,10 @@ class UpstashRedis:
 
     def acquire(self, booking, dry_run=False, ttl_seconds=60):
         key = self.booking_key(booking, dry_run=dry_run)
-        return (
-            self._command(
-                ["SET", key, "processing", "NX", "EX", int(ttl_seconds)]
-            )
-            == "OK"
+        result = self._command(
+            ["SET", key, "processing", "NX", "EX", int(ttl_seconds)]
         )
+        return result == "OK"
 
     @staticmethod
     def integration_result_key(probe_id, step):
