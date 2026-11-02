@@ -123,17 +123,31 @@ class handler(BaseHTTPRequestHandler):
                     return _response(
                     self, 400, {"error": "Integration probe requires date and time"}
                 )
-                acquired = UpstashRedis().acquire(
+                probe_id = payload.get("probe_id")
+                step = payload.get("probe_step")
+                if not probe_id or step not in ("first", "second"):
+                    return _response(
+                        self, 400, {"error": "Integration probe requires probe_id and probe_step"}
+                    )
+                redis = UpstashRedis()
+                acquired = redis.acquire(
                     probe_booking, dry_run=True, ttl_seconds=300
                 )
+                status = (
+                    "integration_test_lock_acquired"
+                    if acquired
+                    else "integration_test_duplicate"
+                )
+                redis.record_integration_result(probe_id, step, status)
                 return _response(
                     self,
                     200,
                     {
-                        "status": "integration_test_lock_acquired" if acquired else "integration_test_duplicate",
+                        "status": status,
                         "dry_run": True,
                         "environment": "preview",
                         "redis": "connected",
+                        "evidence_key": redis.integration_result_key(probe_id, step),
                     },
                 )
 
