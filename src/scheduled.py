@@ -45,9 +45,7 @@ def validate_config(config):
             target_date, time.fromisoformat(booking["time"]), tzinfo=timezone
         )
         if opens_at >= class_starts_at:
-            raise ValueError(
-                f"Booking {index}: opens_at must be before class start"
-            )
+            raise ValueError(f"Booking {index}: opens_at must be before class start")
         identity = (
             booking["date"],
             booking["time"],
