@@ -1,4 +1,5 @@
 """Atomic idempotency locks backed by Upstash Redis REST API."""
+
 import hashlib
 import os
 
