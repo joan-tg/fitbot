@@ -27,6 +27,7 @@ from scheduled import load_config, parse_local_datetime, run  # noqa: E402
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.vercel")
+INTEGRATION_TEST_NAME = "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
 
 
 def _response(handler, status, payload):
@@ -106,6 +107,34 @@ class handler(BaseHTTPRequestHandler):
             return _response(self, 400, {"error": "Body must be valid JSON"})
 
         try:
+            # Isolated integration probe: signed QStash request -> Preview Vercel
+            # -> real Upstash lock. It never loads reservations or calls AimHarder.
+            if isinstance(payload, dict) and payload.get("name") == INTEGRATION_TEST_NAME:
+                if os.environ.get("VERCEL_ENV") != "preview":
+                    return _response(self, 403, {"error": "Integration probe is Preview-only"})
+                if os.environ.get("DRY_RUN", "true").lower() != "true":
+                    return _response(self, 403, {"error": "Integration probe requires DRY_RUN=true"})
+                probe_booking = {
+                    "date": str(payload.get("date", "")),
+                    "time": str(payload.get("time", "")),
+                    "name": INTEGRATION_TEST_NAME,
+                }
+                if not probe_booking["date"] or not probe_booking["time"]:
+                    return _response(self, 400, {"error": "Integration probe requires date and time"})
+                acquired = UpstashRedis().acquire(
+                    probe_booking, dry_run=True, ttl_seconds=300
+                )
+                return _response(
+                    self,
+                    200,
+                    {
+                        "status": "integration_test_lock_acquired" if acquired else "integration_test_duplicate",
+                        "dry_run": True,
+                        "environment": "preview",
+                        "redis": "connected",
+                    },
+                )
+
             config = load_config(ROOT / "reservas.json")
             booking = _find_configured_booking(config, payload)
             if booking is None:
@@ -129,8 +158,6 @@ class handler(BaseHTTPRequestHandler):
                     },
                 )
 
-            # Fail closed: only the literal environment value "false" enables
-            # live bookings. Dry-run locks expire quickly and never block a live run.
             config["bookings"] = [booking]
             config["dry_run"] = os.environ.get("DRY_RUN", "true").lower() != "false"
             redis = UpstashRedis()
