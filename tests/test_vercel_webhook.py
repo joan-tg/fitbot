@@ -120,7 +120,11 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
             return f"fitbot:integration:{probe_id}:{step}"
 
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
-    monkeypatch.setattr(book_api, "run", lambda *a, **k: pytest.fail("scheduler must not run"))
+    monkeypatch.setattr(
+        book_api,
+        "run",
+        lambda *a, **k: pytest.fail("scheduler must not run"),
+    )
     request = FakeHandler(payload)
     response = request.post()
 
