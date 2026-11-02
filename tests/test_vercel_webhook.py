@@ -79,6 +79,8 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
         "date": "integration-run-123",
         "time": "attempt-1",
         "name": "FITBOT_QSTASH_REDIS_INTEGRATION_TEST",
+        "probe_id": "integration-run-123",
+        "probe_step": "first",
     }).encode()
     monkeypatch.setenv("VERCEL_ENV", "preview")
     monkeypatch.setenv("DRY_RUN", "true")
@@ -90,6 +92,15 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
             assert dry_run is True
             assert ttl_seconds == 300
             return True
+
+        def record_integration_result(self, probe_id, step, result):
+            assert (probe_id, step, result) == (
+                "integration-run-123", "first", "integration_test_lock_acquired"
+            )
+
+        @staticmethod
+        def integration_result_key(probe_id, step):
+            return f"fitbot:integration:{probe_id}:{step}"
 
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(book_api, "run", lambda *a, **k: pytest.fail("scheduler must not run"))
