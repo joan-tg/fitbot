@@ -1,7 +1,11 @@
 name: QStash webhook smoke test
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - feature/vercel-qstash-webhook
+    paths:
+      - ".github/workflows/qstash-smoke-test.yml"
 
 permissions:
   contents: read
