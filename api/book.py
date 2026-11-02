@@ -111,9 +111,13 @@ class handler(BaseHTTPRequestHandler):
             # -> real Upstash lock. It never loads reservations or calls AimHarder.
             if isinstance(payload, dict) and payload.get("name") == INTEGRATION_TEST_NAME:
                 if os.environ.get("VERCEL_ENV") != "preview":
-                    return _response(self, 403, {"error": "Integration probe is Preview-only"})
+                    return _response(
+                        self, 403, {"error": "Integration probe is Preview-only"}
+                    )
                 if os.environ.get("DRY_RUN", "true").lower() != "true":
-                    return _response(self, 403, {"error": "Integration probe requires DRY_RUN=true"})
+                    return _response(
+                        self, 403, {"error": "Integration probe requires DRY_RUN=true"}
+                    )
                 probe_booking = {
                     "date": str(payload.get("date", "")),
                     "time": str(payload.get("time", "")),
@@ -121,13 +125,17 @@ class handler(BaseHTTPRequestHandler):
                 }
                 if not probe_booking["date"] or not probe_booking["time"]:
                     return _response(
-                    self, 400, {"error": "Integration probe requires date and time"}
-                )
+                        self,
+                        400,
+                        {"error": "Integration probe requires date and time"},
+                    )
                 probe_id = payload.get("probe_id")
                 step = payload.get("probe_step")
                 if not probe_id or step not in ("first", "second"):
                     return _response(
-                        self, 400, {"error": "Integration probe requires probe_id and probe_step"}
+                        self,
+                        400,
+                        {"error": "Integration probe requires probe_id and probe_step"},
                     )
                 redis = UpstashRedis()
                 acquired = redis.acquire(
