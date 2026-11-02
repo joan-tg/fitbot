@@ -2,6 +2,11 @@ name: Safe Redis connectivity test
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/vercel-qstash-webhook
+    paths:
+      - .github/workflows/redis-connectivity-test.yml
 
 permissions:
   contents: read
