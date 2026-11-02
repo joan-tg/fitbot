@@ -175,3 +175,49 @@ def test_only_explicit_false_enables_live_booking(monkeypatch):
 
     assert result["outcomes"][0]["status"] == "booking_requested"
     assert len(clients[0].book_calls) == 1
+
+
+def test_rejects_duplicate_booking_entries():
+    duplicate_config = config()
+    duplicate_config["bookings"].append(dict(duplicate_config["bookings"][0]))
+    with pytest.raises(ValueError, match="Duplicate booking"):
+        scheduled.validate_config(duplicate_config)
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"time": "25:61"}, "invalid date/time"),
+        ({"opens_at": "2026-11-04T17:15:00"}, "must be before class start"),
+        ({"date": "not-a-date"}, "invalid date/time"),
+    ],
+)
+def test_rejects_invalid_booking_schedule(change, message):
+    invalid_config = config()
+    invalid_config["bookings"][0].update(change)
+    with pytest.raises(ValueError, match=message):
+        scheduled.validate_config(invalid_config)
+
+
+def test_rejects_non_positive_execution_window():
+    invalid_config = config()
+    invalid_config["window_minutes"] = 0
+    with pytest.raises(ValueError, match="positive integer"):
+        scheduled.validate_config(invalid_config)
+
+
+def test_rejects_booking_with_missing_required_field():
+    invalid_config = config()
+    del invalid_config["bookings"][0]["opens_at"]
+    with pytest.raises(ValueError, match="missing: opens_at"):
+        scheduled.validate_config(invalid_config)
+
+
+def test_booking_is_not_due_after_window(monkeypatch):
+    monkeypatch.delenv("EMAIL", raising=False)
+    monkeypatch.delenv("PASSWORD", raising=False)
+    result = scheduled.run(
+        config(),
+        now=datetime(2026, 11, 1, 17, 45, tzinfo=TZ),
+    )
+    assert result == {"status": "not_due", "processed": 0}
