@@ -109,7 +109,10 @@ class handler(BaseHTTPRequestHandler):
         try:
             # Isolated integration probe: signed QStash request -> Preview Vercel
             # -> real Upstash lock. It never loads reservations or calls AimHarder.
-            if isinstance(payload, dict) and payload.get("name") == INTEGRATION_TEST_NAME:
+            if (
+                isinstance(payload, dict)
+                and payload.get("name") == INTEGRATION_TEST_NAME
+            ):
                 if os.environ.get("VERCEL_ENV") != "preview":
                     return _response(
                         self, 403, {"error": "Integration probe is Preview-only"}
