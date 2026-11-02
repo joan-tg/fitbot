@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from scheduled import load_config, parse_local_datetime, run  # noqa: E402
+from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.vercel")
 
@@ -128,10 +129,26 @@ class handler(BaseHTTPRequestHandler):
                     },
                 )
 
-            # Fail closed: only the explicit Vercel environment variable can
-            # enable live bookings; the repository config cannot override it.
+            # Fail closed: only the literal environment value "false" enables
+            # live bookings. Dry-run locks expire quickly and never block a live run.
             config["bookings"] = [booking]
             config["dry_run"] = os.environ.get("DRY_RUN", "true").lower() != "false"
+            redis = UpstashRedis()
+            lock_ttl = 60 if config["dry_run"] else 45 * 24 * 60 * 60
+            acquired = redis.acquire(
+                booking, dry_run=config["dry_run"], ttl_seconds=lock_ttl
+            )
+            if not acquired:
+                return _response(
+                    self,
+                    200,
+                    {
+                        "status": "duplicate_ignored",
+                        "date": booking["date"],
+                        "time": booking["time"],
+                        "dry_run": config["dry_run"],
+                    },
+                )
             result = run(config, now=now)
             outcome = result.get("outcomes", [{}])[0].get("status", result["status"])
             return _response(
@@ -145,6 +162,9 @@ class handler(BaseHTTPRequestHandler):
                     "dry_run": config["dry_run"],
                 },
             )
+        except RedisUnavailable:
+            logger.exception("Redis idempotency lock unavailable; failing closed")
+            return _response(self, 503, {"error": "Idempotency store unavailable"})
         except Exception:
             logger.exception("Unexpected error while processing scheduled booking")
             return _response(self, 500, {"error": "Booking processing failed"})
