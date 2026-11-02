@@ -15,9 +15,7 @@ class UpstashRedis:
         self.token = token or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
         self.session = session or requests
         if not self.url or not self.token:
-            raise RedisUnavailable(
-                "Upstash Redis credentials are not configured"
-            )
+            raise RedisUnavailable("Upstash Redis credentials are not configured")
 
     @staticmethod
     def booking_key(booking, dry_run=False):
