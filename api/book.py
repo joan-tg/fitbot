@@ -141,9 +141,7 @@ class handler(BaseHTTPRequestHandler):
                         {"error": "Integration probe requires probe_id and probe_step"},
                     )
                 redis = UpstashRedis()
-                acquired = redis.acquire(
-                    probe_booking, dry_run=True, ttl_seconds=300
-                )
+                acquired = redis.acquire(probe_booking, dry_run=True, ttl_seconds=300)
                 status = (
                     "integration_test_lock_acquired"
                     if acquired
