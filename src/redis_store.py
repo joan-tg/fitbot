@@ -52,9 +52,7 @@ class UpstashRedis:
     @staticmethod
     def integration_result_key(probe_id, step):
         safe_id = "".join(
-            char
-            for char in str(probe_id)
-            if char.isalnum() or char in "-_"
+            char for char in str(probe_id) if char.isalnum() or char in "-_"
         )
         if not safe_id or step not in ("first", "second"):
             raise ValueError("Invalid integration probe identifier")
