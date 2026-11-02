@@ -1,0 +1,35 @@
+name: Safe Redis connectivity test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  redis-connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify Upstash Redis connection and atomic lock
+        shell: bash
+        env:
+          REDIS_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$REDIS_URL"
+          test -n "$REDIS_TOKEN"
+          BASE="${REDIS_URL%/}"
+          KEY="fitbot:connectivity-test:$RANDOM-$RANDOM-$(date +%s)"
+          cleanup() {
+            curl -fsS -X POST -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/del/$KEY" >/dev/null || true
+          }
+          trap cleanup EXIT
+          FIRST=$(curl -fsS -X POST -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/set/$KEY/probe?NX=true&EX=60")
+          echo "$FIRST" | jq -e '.result == "OK"' >/dev/null
+          SECOND=$(curl -fsS -X POST -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/set/$KEY/duplicate?NX=true&EX=60")
+          echo "$SECOND" | jq -e '.result == null' >/dev/null
+          READBACK=$(curl -fsS -H "Authorization: Bearer $REDIS_TOKEN" "$BASE/get/$KEY")
+          echo "$READBACK" | jq -e '.result == "probe"' >/dev/null
+          echo "PASS: Redis authentication, SET NX, EX TTL and GET verified."
