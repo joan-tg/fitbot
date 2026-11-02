@@ -31,9 +31,7 @@ def validate_config(config):
             raise ValueError(f"Booking {index} must be an object")
         missing = [field for field in BOOKING_FIELDS if not booking.get(field)]
         if missing:
-            raise ValueError(
-                f"Booking {index} is missing: {', '.join(missing)}"
-            )
+            raise ValueError(f"Booking {index} is missing: {', '.join(missing)}")
         try:
             target_date = date.fromisoformat(booking["date"])
             datetime.strptime(booking["time"], "%H:%M")
@@ -115,7 +113,8 @@ def run(config, now=None, client_class=None):
     )
     # Fail closed: only the literal value "false" enables live bookings.
     dry_run = (
-        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower() != "false"
+        os.environ.get("DRY_RUN", str(config.get("dry_run", True))).lower()
+        != "false"
     )
     outcomes = []
 
