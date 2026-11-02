@@ -36,10 +36,18 @@ def test_webhook_rejects_modified_or_unknown_booking():
 def test_booking_window_starts_at_opening_and_ends_after_30_minutes():
     timezone = ZoneInfo("Europe/Madrid")
     booking = {"opens_at": "2026-11-01T17:15:00"}
-    assert _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 15, tzinfo=timezone), 30)
-    assert _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 45, tzinfo=timezone), 30)
-    assert not _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 14, 59, tzinfo=timezone), 30)
-    assert not _is_booking_due(booking, timezone, datetime(2026, 11, 1, 17, 45, 1, tzinfo=timezone), 30)
+    assert _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 15, tzinfo=timezone), 30
+    )
+    assert _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 45, tzinfo=timezone), 30
+    )
+    assert not _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 14, 59, tzinfo=timezone), 30
+    )
+    assert not _is_booking_due(
+        booking, timezone, datetime(2026, 11, 1, 17, 45, 1, tzinfo=timezone), 30
+    )
 
 
 class FakeHeaders(dict):
@@ -49,10 +57,13 @@ class FakeHeaders(dict):
 class FakeHandler:
     def __init__(self, payload, signature="valid"):
         import io
-        self.headers = FakeHeaders({
-            "Content-Length": str(len(payload)),
-            "Upstash-Signature": signature,
-        })
+
+        self.headers = FakeHeaders(
+            {
+                "Content-Length": str(len(payload)),
+                "Upstash-Signature": signature,
+            }
+        )
         self.rfile = io.BytesIO(payload)
         self.wfile = io.BytesIO()
         self.status = None
@@ -75,13 +86,15 @@ class FakeHandler:
 def test_preview_integration_probe_acquires_real_redis_lock_without_running_scheduler(monkeypatch):
     import api.book as book_api
 
-    payload = json.dumps({
-        "date": "integration-run-123",
-        "time": "attempt-1",
-        "name": "FITBOT_QSTASH_REDIS_INTEGRATION_TEST",
-        "probe_id": "integration-run-123",
-        "probe_step": "first",
-    }).encode()
+    payload = json.dumps(
+        {
+            "date": "integration-run-123",
+            "time": "attempt-1",
+            "name": "FITBOT_QSTASH_REDIS_INTEGRATION_TEST",
+            "probe_id": "integration-run-123",
+            "probe_step": "first",
+        }
+    ).encode()
     monkeypatch.setenv("VERCEL_ENV", "preview")
     monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
@@ -95,7 +108,9 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
 
         def record_integration_result(self, probe_id, step, result):
             assert (probe_id, step, result) == (
-                "integration-run-123", "first", "integration_test_lock_acquired"
+                "integration-run-123",
+                "first",
+                "integration_test_lock_acquired",
             )
 
         @staticmethod
@@ -129,7 +144,8 @@ def test_integration_probe_is_blocked_outside_safe_preview(monkeypatch, vercel_e
     monkeypatch.setenv("DRY_RUN", dry_run)
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(
-        book_api, "UpstashRedis",
+        book_api,
+        "UpstashRedis",
         lambda: pytest.fail("Redis must not be touched outside safe Preview"),
     )
     request = FakeHandler(payload)
