@@ -18,11 +18,16 @@ jobs:
       - name: Publish a harmless signed test message
         env:
           QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
           WEBHOOK_URL: https://fitbot-git-feature-vercel-qstash-webhook-joan-tgs-projects.vercel.app/api/book
         run: |
           set -euo pipefail
           if [ -z "${QSTASH_TOKEN}" ]; then
             echo "::error::Repository secret QSTASH_TOKEN is missing or empty."
+            exit 1
+          fi
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET}" ]; then
+            echo "::error::Repository secret VERCEL_AUTOMATION_BYPASS_SECRET is missing or empty."
             exit 1
           fi
 
@@ -34,6 +39,7 @@ jobs:
             --header "Authorization: Bearer ${QSTASH_TOKEN}" \
             --header "Content-Type: application/json" \
             --header "Upstash-Retries: 0" \
+            --header "Upstash-Forward-x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET}" \
             --data '{"date":"2099-01-01","opens_at":"2098-12-31T00:00:00","time":"00:00","name":"FITBOT_QSTASH_SMOKE_TEST"}' \
             "https://qstash.upstash.io/v2/publish/${WEBHOOK_URL}")"
 
