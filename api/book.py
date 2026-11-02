@@ -120,7 +120,9 @@ class handler(BaseHTTPRequestHandler):
                     "name": INTEGRATION_TEST_NAME,
                 }
                 if not probe_booking["date"] or not probe_booking["time"]:
-                    return _response(self, 400, {"error": "Integration probe requires date and time"})
+                    return _response(
+                    self, 400, {"error": "Integration probe requires date and time"}
+                )
                 acquired = UpstashRedis().acquire(
                     probe_booking, dry_run=True, ttl_seconds=300
                 )
