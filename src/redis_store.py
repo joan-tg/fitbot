@@ -1,4 +1,4 @@
-"""Atomic idempotency locks backed by Upstash Redis REST API."""
+"""Atomic idempotency locks and integration evidence backed by Upstash Redis REST API."""
 
 import hashlib
 import os
@@ -18,6 +18,22 @@ class UpstashRedis:
         if not self.url or not self.token:
             raise RedisUnavailable("Upstash Redis credentials are not configured")
 
+    def _command(self, command):
+        try:
+            response = self.session.post(
+                self.url,
+                json=command,
+                headers={"Authorization": f"Bearer {self.token}"},
+                timeout=8,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if "error" in payload:
+                raise RedisUnavailable("Upstash Redis command failed")
+            return payload.get("result")
+        except (requests.RequestException, ValueError, TypeError) as error:
+            raise RedisUnavailable("Could not execute Redis command") from error
+
     @staticmethod
     def booking_key(booking, dry_run=False):
         identity = "|".join(
@@ -29,19 +45,19 @@ class UpstashRedis:
 
     def acquire(self, booking, dry_run=False, ttl_seconds=60):
         key = self.booking_key(booking, dry_run=dry_run)
-        try:
-            # Use Upstash's canonical command endpoint. Sending Redis commands
-            # as a JSON array avoids URL/path encoding issues with namespaced keys.
-            response = self.session.post(
-                self.url,
-                json=["SET", key, "processing", "NX", "EX", int(ttl_seconds)],
-                headers={"Authorization": f"Bearer {self.token}"},
-                timeout=8,
-            )
-            response.raise_for_status()
-            result = response.json().get("result")
-        except (requests.RequestException, ValueError, TypeError) as error:
-            raise RedisUnavailable(
-                "Could not acquire Redis idempotency lock"
-            ) from error
-        return result == "OK"
+        return self._command(
+            ["SET", key, "processing", "NX", "EX", int(ttl_seconds)]
+        ) == "OK"
+
+    @staticmethod
+    def integration_result_key(probe_id, step):
+        safe_id = "".join(
+            char for char in str(probe_id) if char.isalnum() or char in "-_"
+        )
+        if not safe_id or step not in ("first", "second"):
+            raise ValueError("Invalid integration probe identifier")
+        return f"fitbot:integration:{safe_id}:{step}"
+
+    def record_integration_result(self, probe_id, step, result, ttl_seconds=3600):
+        key = self.integration_result_key(probe_id, step)
+        self._command(["SET", key, str(result), "EX", int(ttl_seconds)])
