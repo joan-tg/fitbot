@@ -53,7 +53,8 @@ def _schedule_booking(booking):
     config = load_config(ROOT / "reservas.json")
     fields = ("date", "opens_at", "time", "name")
     matches = [
-        item for item in config.get("bookings", [])
+        item
+        for item in config.get("bookings", [])
         if all(booking.get(field) == item.get(field) for field in fields)
     ]
     if len(matches) != 1:
