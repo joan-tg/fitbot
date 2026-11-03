@@ -34,9 +34,9 @@ which should be sent in this form:
 
 <img src="https://raw.github.com/pablobuenaposada/fitbot/master/inspect.png" data-canonical-src="https://raw.github.com/pablobuenaposada/fitbot/master/inspect.png" height="300" />
 
-`days-in-advance`: this is how many days in advance the script should try to book classes from, so for example, if this script is being run on a Monday and this field is set to 3 it's going to try book Thursday class from `booking_goals`
+`days-in-advance`: this is how many days in advance the script should try to book classes from, so for example, if this field is being run on a Monday and this field is set to 3 it's going to try book Thursday class from `booking_goals`
 
-`family-id`: Optional. This is the id for the person who wants to book a class in case the account has more than one member. 
+`family-id`: Optional. it's the id for the person who wants to book a class in case the account has more than one member. 
 The value for this parameter can be found by inspecting the requests with the browser, as with the field `box-id`.
 
 `proxy`: Optional. If you want to use a proxy, you can set it with the format `socks5://ip:port`.
@@ -50,6 +50,7 @@ Configure these environment variables in the **Preview** environment only:
 - `FITBOT_ADMIN_TOKEN`: a long, random administrative bearer token. Generate it outside ChatGPT and store it as a Vercel Preview environment variable.
 - `QSTASH_TOKEN`: QStash publishing token.
 - `FITBOT_WEBHOOK_URL`: exact public URL of `/api/book`.
+- `VERCEL_AUTOMATION_BYPASS_SECRET`: the current Vercel Deployment Protection automation-bypass secret. The endpoint forwards it to QStash using `Upstash-Forward-x-vercel-protection-bypass`, so QStash can reach the protected Preview webhook.
 
 Example request (do not put real tokens in source control or chat):
 
