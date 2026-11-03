@@ -8,15 +8,14 @@ import hmac
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import requests
-
-from pathlib import Path
-import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -71,8 +70,9 @@ def _schedule_booking(booking):
 
     qstash_token = os.environ.get("QSTASH_TOKEN")
     webhook_url = os.environ.get("FITBOT_WEBHOOK_URL")
-    if not qstash_token or not webhook_url:
-        raise RuntimeError("QStash publishing is not configured")
+    vercel_bypass_secret = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET")
+    if not qstash_token or not webhook_url or not vercel_bypass_secret:
+        raise RuntimeError("QStash publishing or Vercel bypass is not configured")
 
     not_before = int(opens_at.astimezone(timezone.utc).timestamp())
     destination = quote(webhook_url, safe="")
@@ -83,6 +83,7 @@ def _schedule_booking(booking):
             "Authorization": f"Bearer {qstash_token}",
             "Content-Type": "application/json",
             "Upstash-Not-Before": str(not_before),
+            "Upstash-Forward-x-vercel-protection-bypass": vercel_bypass_secret,
         },
         timeout=10,
     )
