@@ -1,9 +1,4 @@
-"""Protected Preview-only administrative endpoint for one-off QStash schedules.
-
-POST /api/schedule with Authorization: Bearer <FITBOT_ADMIN_TOKEN> and
-a booking object matching an entry in reservas.json. This endpoint never
-activates live bookings; it requires DRY_RUN=true.
-"""
+"""Protected Preview-only endpoint for one-off QStash schedules (DRY_RUN only)."""
 import hmac
 import json
 import logging
