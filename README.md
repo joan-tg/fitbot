@@ -7,7 +7,7 @@ Python script to automate your session bookings in [aimharder.com](http://aimhar
 Having docker installed you only need to do the following command:
 
 ```bash
-docker run -e email=your.email@mail.com -e password=1234 -e booking-goals='{"0":{"time":"1815","name":"Provenza"}}' -e box-name=lahuellacrossfit -e box-id=3984 -e days-in-advance=3 pablobuenaposada/fitbot
+docker run --env-file .env --env-file .env.secrets pablobuenaposada/fitbot
 ```
 Explanation about the fields:
 
