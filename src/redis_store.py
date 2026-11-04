@@ -60,8 +60,15 @@ class UpstashRedis:
             "return 1 else return 0 end"
         )
         result = self._command(
-            ["EVAL", script, 1, self.booking_key(booking, dry_run), token,
-             str(status), int(ttl_seconds)]
+            [
+                "EVAL",
+                script,
+                1,
+                self.booking_key(booking, dry_run),
+                token,
+                str(status),
+                int(ttl_seconds),
+            ]
         )
         return result == 1
 
