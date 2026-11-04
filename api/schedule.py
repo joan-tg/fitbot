@@ -11,6 +11,8 @@ from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from urllib.parse import quote
+
 import requests
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,7 +76,7 @@ def _schedule_booking(booking):
     not_before = int(opens_at.astimezone(timezone.utc).timestamp())
     destination = quote(webhook_url, safe="")
     response = requests.post(
-        f"https://qstash.upstash.io/v2/publish/{destination}",
+        f"https://qstash.upstash.io/v2/publish/{quote(destination, safe='')}",
         json=matches[0],
         headers={
             "Authorization": f"Bearer {qstash_token}",
