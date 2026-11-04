@@ -5,7 +5,12 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from client import AimHarderClient
-from exceptions import BookingFailed, BoxClosed, NoBookingGoal
+from exceptions import (
+    BookingFailed,
+    BookingUnconfirmed,
+    BoxClosed,
+    NoBookingGoal,
+)
 from logger import logger
 from fitbot_cli import get_class_to_book
 
@@ -109,9 +114,8 @@ def run(config, now=None, client_class=None):
         box_name=config["box_name"],
         proxy=os.environ.get("PROXY") or None,
     )
-    # Fail closed: only the literal value "false" enables live bookings.
-    dry_run_setting = os.environ.get("DRY_RUN", str(config.get("dry_run", True)))
-    dry_run = dry_run_setting.lower() != "false"
+    # Only an explicit environment variable can enable live booking.
+    dry_run = os.environ.get("DRY_RUN", "true").lower() != "false"
     outcomes = []
 
     for booking in due_bookings:
@@ -162,12 +166,20 @@ def run(config, now=None, client_class=None):
                 config.get("family_id"),
             )
             logger.info(
-                "Booking request sent: %s %s on %s",
+                "Booking confirmed: %s %s on %s",
                 booking["time"],
                 class_name,
                 booking["date"],
             )
-            outcomes.append({"status": "booking_requested", "booking": booking})
+            outcomes.append({"status": "booking_confirmed", "booking": booking})
+        except BookingUnconfirmed as error:
+            logger.error(
+                "Booking outcome is unconfirmed for %s on %s: %s",
+                class_name,
+                booking["date"],
+                error,
+            )
+            outcomes.append({"status": "booking_unconfirmed", "booking": booking})
         except BookingFailed as error:
             logger.error(
                 "Booking failed for %s on %s: %s",
