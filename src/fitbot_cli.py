@@ -109,9 +109,11 @@ def main(
 
 if __name__ == "__main__":
     """
-    python src/main.py
+    PASSWORD may be supplied through the environment; otherwise the CLI prompts
+    securely for it.
+
+    python src/fitbot_cli.py
      --email your.email@mail.com
-     --password 1234
      --box-name lahuellacrossfit
      --box-id 3984
      --booking-goal '{"0":{"time": "1815", "name": "Provenza"}}'
