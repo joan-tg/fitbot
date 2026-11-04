@@ -12,6 +12,7 @@ from exceptions import (
     MESSAGE_BOOKING_FAILED_NO_CREDIT,
     MESSAGE_BOOKING_FAILED_PENDING_PAYMENT,
     MESSAGE_TOO_SOON_TO_BOOK,
+    AimHarderUnavailable,
     BookingFailed,
     BookingUnconfirmed,
     IncorrectCredentials,
