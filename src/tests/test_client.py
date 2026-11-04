@@ -198,9 +198,7 @@ class TestAimHarderClient:
 
         with patch("requests.Session.get", side_effect=Timeout):
             with pytest.raises(AimHarderUnavailable, match="classes request failed"):
-                client.get_classes(
-                    datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC)
-                )
+                client.get_classes(datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC))
 
     def test_get_classes_invalid_json_is_classified_as_pre_booking_outage(self):
         with patch("requests.Session.post") as m_post:
@@ -212,9 +210,7 @@ class TestAimHarderClient:
         with patch("requests.Session.get") as m_get:
             m_get.return_value.json.side_effect = ValueError("invalid JSON")
             with pytest.raises(AimHarderUnavailable, match="classes request failed"):
-                client.get_classes(
-                    datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC)
-                )
+                client.get_classes(datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC))
 
     def test_booking_post_timeout_verifies_before_reporting_uncertain(self):
         with patch("requests.Session.post") as m_post:
