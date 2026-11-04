@@ -3,6 +3,7 @@
 import hashlib
 import os
 import re
+import uuid
 
 import requests
 
@@ -44,10 +45,36 @@ class UpstashRedis:
         namespace = "fitbot:dryrun" if dry_run else "fitbot:booking"
         return f"{namespace}:{digest}"
 
-    def acquire(self, booking, dry_run=False, ttl_seconds=60):
+    def acquire(self, booking, dry_run=False, ttl_seconds=300):
+        """Acquire a booking lock and return its unique owner token, or None."""
+        token = uuid.uuid4().hex
         key = self.booking_key(booking, dry_run=dry_run)
-        result = self._command(["SET", key, "processing", "NX", "EX", int(ttl_seconds)])
-        return result == "OK"
+        result = self._command(["SET", key, token, "NX", "EX", int(ttl_seconds)])
+        return token if result == "OK" else None
+
+    def complete(self, booking, token, status, dry_run=False, ttl_seconds=60):
+        """Replace an owned processing lock with a terminal state atomically."""
+        script = (
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then "
+            "redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]); "
+            "return 1 else return 0 end"
+        )
+        result = self._command(
+            ["EVAL", script, 1, self.booking_key(booking, dry_run), token,
+             str(status), int(ttl_seconds)]
+        )
+        return result == 1
+
+    def release(self, booking, token, dry_run=False):
+        """Delete a lock only if it is still owned by this invocation."""
+        script = (
+            "if redis.call('GET', KEYS[1]) == ARGV[1] then "
+            "return redis.call('DEL', KEYS[1]) else return 0 end"
+        )
+        result = self._command(
+            ["EVAL", script, 1, self.booking_key(booking, dry_run), token]
+        )
+        return result == 1
 
     @staticmethod
     def integration_result_key(probe_id, step):
