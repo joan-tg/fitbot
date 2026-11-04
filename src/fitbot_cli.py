@@ -26,16 +26,51 @@ def get_booking_goal_time(day: datetime, booking_goals):
 
 
 def get_class_to_book(classes: list[dict], target_time: str, class_name: str):
-    if not classes or len(classes) == 0:
+    """Return one unambiguous class matching the requested time and name."""
+    if not classes:
         raise BoxClosed(MESSAGE_BOX_IS_CLOSED)
 
-    classes = list(filter(lambda _class: target_time in _class["timeid"], classes))
-    _class = list(filter(lambda _class: class_name in _class["className"], classes))
-    if len(_class) == 0:
+    # AimHarder time IDs commonly include a duration suffix, e.g. "1715_60".
+    # Compare the time component, not a substring that could match another time.
+    time_classes = [
+        item
+        for item in classes
+        if isinstance(item, dict)
+        and str(item.get("timeid", "")).split("_", 1)[0] == str(target_time)
+    ]
+
+    requested_name = str(class_name).strip().casefold()
+    exact_matches = [
+        item
+        for item in time_classes
+        if isinstance(item.get("className"), str)
+        and item["className"].strip().casefold() == requested_name
+    ]
+
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    if len(exact_matches) > 1:
         raise NoBookingGoal(
-            f"No class with the text `{class_name}` in its name at time `{target_time}`"
+            f"Ambiguous class: multiple exact matches for "
+            f"`{class_name}` at `{target_time}`."
         )
-    return _class[0]
+
+    partial_matches = [
+        item
+        for item in time_classes
+        if isinstance(item.get("className"), str)
+        and requested_name in item["className"].casefold()
+    ]
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+    if len(partial_matches) > 1:
+        raise NoBookingGoal(
+            f"Ambiguous class: multiple partial matches for "
+            f"`{class_name}` at `{target_time}`."
+        )
+    raise NoBookingGoal(
+        f"No class with the text `{class_name}` in its name at time `{target_time}`"
+    )
 
 
 def main(
