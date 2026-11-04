@@ -53,7 +53,7 @@ class TestGetClassToBook:
                 ],
                 "1700",
                 "foo",
-                does_not_raise(),
+                pytest.raises(NoBookingGoal, match="multiple exact matches"),
             ),
             (
                 [{"id": 123, "timeid": "1100_60", "className": "foo"}],
