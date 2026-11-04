@@ -134,6 +134,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     arguments = {key: value for key, value in args.__dict__.items() if value != ""}
-    password = os.environ.get("PASSWORD") or getpass.getpass("AimHarder password: ")
-    arguments["proxy"] = os.environ.get("PROXY") or None
+    password = (
+        os.environ.get("PASSWORD")
+        or os.environ.get("password")
+        or getpass.getpass("AimHarder password: ")
+    )
+    arguments["proxy"] = os.environ.get("PROXY") or os.environ.get("proxy") or None
     main(password=password, **arguments)
