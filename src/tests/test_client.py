@@ -49,7 +49,7 @@ class TestAimHarderClient:
             (
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 login_error("LOGIN_ERROR_SOMETHING_ELSE"),
-                pytest.raises(HTTPError),
+                pytest.raises(AimHarderUnavailable),
             ),
         ),
     )
@@ -178,7 +178,6 @@ class TestAimHarderClient:
                     datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC), "123"
                 )
 
-
     def test_login_timeout_is_classified_as_pre_booking_outage(self):
         with patch("requests.Session.post", side_effect=Timeout):
             with pytest.raises(AimHarderUnavailable, match="login request failed"):
@@ -203,7 +202,9 @@ class TestAimHarderClient:
 
         with patch("requests.Session.get", side_effect=Timeout):
             with pytest.raises(AimHarderUnavailable, match="classes request failed"):
-                client.get_classes(datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC))
+                client.get_classes(
+                    datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC)
+                )
 
     def test_get_classes_invalid_json_is_classified_as_pre_booking_outage(self):
         with patch("requests.Session.post") as m_post:
@@ -231,9 +232,12 @@ class TestAimHarderClient:
             m_get.return_value.json.return_value = {
                 "bookings": [{"id": "123", "bookState": 1}]
             }
-            assert client.book_class(
-                datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC), "123"
-            ) is True
+            assert (
+                client.book_class(
+                    datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC), "123"
+                )
+                is True
+            )
 
     def test_booking_post_timeout_without_verification_stays_unconfirmed(self):
         with patch("requests.Session.post") as m_post:
