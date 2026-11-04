@@ -27,6 +27,7 @@ class FakeClient:
 
     def book_class(self, target_day, class_id, family_id=None):
         self.book_calls.append((target_day, class_id, family_id))
+        return True
 
 
 def config():
@@ -83,6 +84,29 @@ def test_environment_dry_run_true_overrides_live_repository_config(monkeypatch):
     monkeypatch.setenv("EMAIL", "test@example.com")
     monkeypatch.setenv("PASSWORD", "not-a-real-password")
     monkeypatch.setenv("DRY_RUN", "true")
+    live_config = config()
+    live_config["dry_run"] = False
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        live_config,
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "dry_run"
+    assert clients[0].book_calls == []
+
+
+def test_repository_config_false_cannot_enable_live_booking(monkeypatch):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.delenv("DRY_RUN", raising=False)
     live_config = config()
     live_config["dry_run"] = False
     clients = []
@@ -173,7 +197,7 @@ def test_only_explicit_false_enables_live_booking(monkeypatch):
         client_class=factory,
     )
 
-    assert result["outcomes"][0]["status"] == "booking_requested"
+    assert result["outcomes"][0]["status"] == "booking_confirmed"
     assert len(clients[0].book_calls) == 1
 
 
