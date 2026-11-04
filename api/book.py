@@ -28,6 +28,8 @@ from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.vercel")
 INTEGRATION_TEST_NAME = "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
+LIVE_LOCK_TTL = 45 * 24 * 60 * 60
+PROCESSING_LOCK_TTL = 5 * 60
 
 
 def _response(handler, status, payload):
@@ -183,14 +185,15 @@ class handler(BaseHTTPRequestHandler):
                     },
                 )
 
+            dry_run = os.environ.get("DRY_RUN", "true").lower() != "false"
             config["bookings"] = [booking]
-            config["dry_run"] = os.environ.get("DRY_RUN", "true").lower() != "false"
+            config["dry_run"] = dry_run
             redis = UpstashRedis()
-            lock_ttl = 60 if config["dry_run"] else 45 * 24 * 60 * 60
-            acquired = redis.acquire(
-                booking, dry_run=config["dry_run"], ttl_seconds=lock_ttl
+            lock_ttl = PROCESSING_LOCK_TTL if dry_run else LIVE_LOCK_TTL
+            lock_token = redis.acquire(
+                booking, dry_run=dry_run, ttl_seconds=lock_ttl
             )
-            if not acquired:
+            if not lock_token:
                 return _response(
                     self,
                     200,
@@ -198,11 +201,48 @@ class handler(BaseHTTPRequestHandler):
                         "status": "duplicate_ignored",
                         "date": booking["date"],
                         "time": booking["time"],
-                        "dry_run": config["dry_run"],
+                        "dry_run": dry_run,
                     },
                 )
-            result = run(config, now=now)
-            outcome = result.get("outcomes", [{}])[0].get("status", result["status"])
+
+            try:
+                result = run(config, now=now)
+            except Exception:
+                # In live mode, retain the long lock after an unexpected error:
+                # the remote booking outcome may be unknown. Never risk a duplicate.
+                if dry_run:
+                    redis.release(booking, lock_token, dry_run=True)
+                raise
+
+            outcome = result.get("outcomes", [{}])[0].get(
+                "status", result["status"]
+            )
+            if dry_run:
+                redis.complete(
+                    booking, lock_token, outcome, dry_run=True, ttl_seconds=60
+                )
+            elif outcome in ("booking_confirmed", "already_booked"):
+                redis.complete(
+                    booking,
+                    lock_token,
+                    outcome,
+                    dry_run=False,
+                    ttl_seconds=LIVE_LOCK_TTL,
+                )
+            elif outcome in ("class_not_found", "booking_failed"):
+                # No successful booking was confirmed; allow a controlled retry.
+                redis.release(booking, lock_token, dry_run=False)
+            else:
+                # Includes booking_unconfirmed: preserve the lock to prevent a
+                # duplicate while the remote outcome is uncertain.
+                redis.complete(
+                    booking,
+                    lock_token,
+                    "outcome_unconfirmed",
+                    dry_run=False,
+                    ttl_seconds=LIVE_LOCK_TTL,
+                )
+
             return _response(
                 self,
                 200,
@@ -211,7 +251,7 @@ class handler(BaseHTTPRequestHandler):
                     "date": booking["date"],
                     "time": booking["time"],
                     "class": booking["name"],
-                    "dry_run": config["dry_run"],
+                    "dry_run": dry_run,
                 },
             )
         except RedisUnavailable:
