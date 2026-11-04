@@ -11,8 +11,6 @@ from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from urllib.parse import quote
-
 import requests
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -74,9 +72,9 @@ def _schedule_booking(booking):
         raise RuntimeError("QStash publishing or Vercel bypass is not configured")
 
     not_before = int(opens_at.astimezone(timezone.utc).timestamp())
-    destination = quote(webhook_url, safe="")
+    destination = webhook_url
     response = requests.post(
-        f"https://qstash.upstash.io/v2/publish/{quote(destination, safe='')}",
+        f"https://qstash.upstash.io/v2/publish/{destination}",
         json=matches[0],
         headers={
             "Authorization": f"Bearer {qstash_token}",
