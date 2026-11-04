@@ -118,7 +118,6 @@ if __name__ == "__main__":
      --box-id 3984
      --booking-goal '{"0":{"time": "1815", "name": "Provenza"}}'
      --family-id 123456
-     --proxy socks5://89.58.45.94:34472
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--email", required=True, type=str)
@@ -126,7 +125,6 @@ if __name__ == "__main__":
     parser.add_argument("--box-name", required=True, type=str)
     parser.add_argument("--box-id", required=True, type=int)
     parser.add_argument("--days-in-advance", required=True, type=int, default=3)
-    parser.add_argument("--proxy", required=False, type=str, default=None)
     parser.add_argument(
         "--family-id",
         required=False,
@@ -137,4 +135,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     arguments = {key: value for key, value in args.__dict__.items() if value != ""}
     password = os.environ.get("PASSWORD") or getpass.getpass("AimHarder password: ")
+    arguments["proxy"] = os.environ.get("PROXY") or None
     main(password=password, **arguments)
