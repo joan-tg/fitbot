@@ -1,5 +1,7 @@
 import argparse
+import getpass
 import json
+import os
 from datetime import UTC, datetime, timedelta
 
 from client import AimHarderClient
@@ -118,7 +120,6 @@ if __name__ == "__main__":
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--email", required=True, type=str)
-    parser.add_argument("--password", required=True, type=str)
     parser.add_argument("--booking-goals", required=True, type=json.loads)
     parser.add_argument("--box-name", required=True, type=str)
     parser.add_argument("--box-id", required=True, type=int)
@@ -132,5 +133,6 @@ if __name__ == "__main__":
         help="ID of the family member (optional)",
     )
     args = parser.parse_args()
-    input = {key: value for key, value in args.__dict__.items() if value != ""}
-    main(**input)
+    arguments = {key: value for key, value in args.__dict__.items() if value != ""}
+    password = os.environ.get("PASSWORD") or getpass.getpass("AimHarder password: ")
+    main(password=password, **arguments)
