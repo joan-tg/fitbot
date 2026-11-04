@@ -14,6 +14,7 @@ from exceptions import (
     MESSAGE_BOOKING_FAILED_PENDING_PAYMENT,
     MESSAGE_BOOKING_FAILED_UNKNOWN,
     MESSAGE_TOO_SOON_TO_BOOK,
+    AimHarderUnavailable,
     BookingFailed,
     BookingUnconfirmed,
     IncorrectCredentials,
@@ -42,11 +43,19 @@ class AimHarderClient:
         session = Session()
         session.proxies = {"https": proxy} if proxy else {}
         logger.info("Using proxy: %s", "yes" if proxy else "no")
-        response = session.post(
-            LOGIN_ENDPOINT,
-            json={"username": email, "password": password, "iniframe": 0},
-            timeout=AimHarderClient.REQUEST_TIMEOUT,
-        )
+        try:
+            response = session.post(
+                LOGIN_ENDPOINT,
+                json={"username": email, "password": password, "iniframe": 0},
+                timeout=AimHarderClient.REQUEST_TIMEOUT,
+            )
+        except requests.RequestException as error:
+            raise AimHarderUnavailable("AimHarder login request failed") from error
+
+        if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
+            raise AimHarderUnavailable(
+                f"AimHarder login returned HTTP {response.status_code}"
+            )
         if response.status_code != HTTPStatus.OK:
             try:
                 message = response.json().get("error", {}).get("message", "")
@@ -61,21 +70,26 @@ class AimHarderClient:
         return session
 
     def get_classes(self, target_day: datetime, family_id: str | None = None):
-        response = self.session.get(
-            classes_endpoint(self.box_name),
-            params={
-                "box": self.box_id,
-                "day": target_day.strftime("%Y%m%d"),
-                "familyId": family_id,
-            },
-            timeout=self.REQUEST_TIMEOUT,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = self.session.get(
+                classes_endpoint(self.box_name),
+                params={
+                    "box": self.box_id,
+                    "day": target_day.strftime("%Y%m%d"),
+                    "familyId": family_id,
+                },
+                timeout=self.REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as error:
+            raise AimHarderUnavailable(
+                "AimHarder classes request failed or returned invalid JSON"
+            ) from error
         if not isinstance(payload, dict) or not isinstance(
             payload.get("bookings"), list
         ):
-            raise ValueError("AimHarder returned an invalid classes response")
+            raise AimHarderUnavailable("AimHarder returned an invalid classes response")
         return payload["bookings"]
 
     def _is_class_booked(self, target_day, class_id, family_id=None):
@@ -104,7 +118,7 @@ class AimHarderClient:
             try:
                 if self._is_class_booked(target_day, class_id, family_id):
                     return True
-            except (requests.RequestException, ValueError):
+            except (AimHarderUnavailable, requests.RequestException, ValueError):
                 pass
             raise BookingUnconfirmed(
                 "Booking request outcome is unknown; verification failed"
@@ -131,7 +145,7 @@ class AimHarderClient:
         try:
             if self._is_class_booked(target_day, class_id, family_id):
                 return True
-        except (requests.RequestException, ValueError) as error:
+        except (AimHarderUnavailable, requests.RequestException, ValueError) as error:
             raise BookingUnconfirmed(
                 "Booking request was sent but its result could not be verified"
             ) from error
