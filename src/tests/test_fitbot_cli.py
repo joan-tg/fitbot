@@ -12,10 +12,7 @@ def test_returns_exact_name_before_partial_matches():
     exact = class_item("Weightlifting", class_id="exact")
     partial = class_item("Weightlifting Advanced", class_id="partial")
 
-    assert (
-        get_class_to_book([partial, exact], "1715", "Weightlifting")["id"]
-        == "exact"
-    )
+    assert get_class_to_book([partial, exact], "1715", "Weightlifting")["id"] == "exact"
 
 
 def test_returns_one_unique_partial_name_match():
