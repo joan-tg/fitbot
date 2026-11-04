@@ -19,6 +19,10 @@ class IncorrectCredentials(ErrorResponse):
     key_phrase = "LOGIN_ERROR_LOGIN"
 
 
+class AimHarderUnavailable(Exception):
+    """AimHarder could not be reached or returned an unusable pre-booking response."""
+
+
 class BookingFailed(Exception):
     pass
 
