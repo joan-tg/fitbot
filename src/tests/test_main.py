@@ -8,7 +8,7 @@ from freezegun import freeze_time
 
 from constants import LOGIN_ENDPOINT, book_endpoint
 from exceptions import BoxClosed, NoBookingGoal
-from main import get_booking_goal_time, get_class_to_book, main
+from fitbot_cli import get_booking_goal_time, get_class_to_book, main
 
 
 class TestGetBookingGoalTime:
