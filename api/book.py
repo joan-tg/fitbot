@@ -214,9 +214,7 @@ class handler(BaseHTTPRequestHandler):
                     redis.release(booking, lock_token, dry_run=True)
                 raise
 
-            outcome = result.get("outcomes", [{}])[0].get(
-                "status", result["status"]
-            )
+            outcome = result.get("outcomes", [{}])[0].get("status", result["status"])
             if dry_run:
                 redis.complete(
                     booking, lock_token, outcome, dry_run=True, ttl_seconds=60
