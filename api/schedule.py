@@ -84,9 +84,8 @@ def _schedule_booking(booking):
         },
         timeout=10,
     )
-    print("QSTASH STATUS:", response.status_code)
-    print("QSTASH RESPONSE:", response.text)
     response.raise_for_status()
+    logger.info("QStash schedule published successfully (HTTP %s)", response.status_code)
     result = response.json()
     message_id = result.get("messageId")
     if not message_id:
