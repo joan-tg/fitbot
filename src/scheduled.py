@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from client import AimHarderClient
 from exceptions import BookingFailed, BoxClosed, NoBookingGoal
 from logger import logger
-from main import get_class_to_book
+from fitbot_cli import get_class_to_book
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "reservas.json"
 BOOKING_FIELDS = ("date", "opens_at", "time", "name")
