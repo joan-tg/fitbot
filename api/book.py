@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from scheduled import load_config, parse_local_datetime, run  # noqa: E402
+from exceptions import AimHarderUnavailable  # noqa: E402
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.vercel")
@@ -205,9 +206,17 @@ class handler(BaseHTTPRequestHandler):
 
             try:
                 result = run(config, now=now)
+            except AimHarderUnavailable:
+                # Login/classes failed before a booking POST was sent. It is safe
+                # to release the lock and let QStash retry this delivery.
+                redis.release(booking, lock_token, dry_run=dry_run)
+                logger.warning("AimHarder unavailable before booking; retry is safe")
+                return _response(
+                    self, 503, {"error": "AimHarder unavailable before booking"}
+                )
             except Exception:
-                # In live mode, retain the long lock after an unexpected error:
-                # the remote booking outcome may be unknown. Never risk a duplicate.
+                # An unexpected live-mode error may have happened after a booking
+                # POST. Retain the long lock rather than risk a duplicate.
                 if dry_run:
                     redis.release(booking, lock_token, dry_run=True)
                 raise
