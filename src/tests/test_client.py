@@ -181,17 +181,13 @@ class TestAimHarderClient:
     def test_login_timeout_is_classified_as_pre_booking_outage(self):
         with patch("requests.Session.post", side_effect=Timeout):
             with pytest.raises(AimHarderUnavailable, match="login request failed"):
-                AimHarderClient(
-                    email="foo", password="bar", box_id=1, box_name="foo"
-                )
+                AimHarderClient(email="foo", password="bar", box_id=1, box_name="foo")
 
     def test_login_server_error_is_classified_as_pre_booking_outage(self):
         with patch("requests.Session.post") as m_post:
             m_post.return_value.status_code = HTTPStatus.SERVICE_UNAVAILABLE
             with pytest.raises(AimHarderUnavailable, match="HTTP 503"):
-                AimHarderClient(
-                    email="foo", password="bar", box_id=1, box_name="foo"
-                )
+                AimHarderClient(email="foo", password="bar", box_id=1, box_name="foo")
 
     def test_get_classes_timeout_is_classified_as_pre_booking_outage(self):
         with patch("requests.Session.post") as m_post:
