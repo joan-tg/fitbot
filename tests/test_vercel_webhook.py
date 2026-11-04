@@ -163,3 +163,48 @@ def test_integration_probe_is_blocked_outside_safe_preview(
 
     assert request.status == 403
     assert "error" in response
+
+
+def test_pre_booking_aimharder_outage_releases_live_lock_for_retry(monkeypatch):
+    import api.book as book_api
+    from exceptions import AimHarderUnavailable
+
+    booking = {
+        "date": "2026-11-06",
+        "opens_at": "2026-11-03T10:00:00",
+        "time": "10:00",
+        "name": "Weightlifting",
+    }
+    payload = json.dumps(booking).encode()
+    released = []
+
+    class FakeRedis:
+        def acquire(self, booking_data, dry_run, ttl_seconds):
+            assert booking_data == booking
+            assert dry_run is False
+            return "owner-token"
+
+        def release(self, booking_data, token, dry_run):
+            released.append((booking_data, token, dry_run))
+            return True
+
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: {
+        "timezone": "Europe/Madrid",
+        "window_minutes": 30,
+        "bookings": [booking],
+    })
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+
+    def fail_before_booking(*args, **kwargs):
+        raise AimHarderUnavailable("login timeout")
+
+    monkeypatch.setattr(book_api, "run", fail_before_booking)
+    request = FakeHandler(payload)
+    response = request.post()
+
+    assert request.status == 503
+    assert response["error"] == "AimHarder unavailable before booking"
+    assert released == [(booking, "owner-token", False)]
