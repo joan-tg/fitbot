@@ -216,7 +216,9 @@ class TestAimHarderClient:
         with patch("requests.Session.get") as m_get:
             m_get.return_value.json.side_effect = ValueError("invalid JSON")
             with pytest.raises(AimHarderUnavailable, match="classes request failed"):
-                client.get_classes(datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC))
+                client.get_classes(
+                    datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC)
+                )
 
     def test_booking_post_timeout_verifies_before_reporting_uncertain(self):
         with patch("requests.Session.post") as m_post:
