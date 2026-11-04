@@ -190,9 +190,7 @@ class handler(BaseHTTPRequestHandler):
             config["dry_run"] = dry_run
             redis = UpstashRedis()
             lock_ttl = PROCESSING_LOCK_TTL if dry_run else LIVE_LOCK_TTL
-            lock_token = redis.acquire(
-                booking, dry_run=dry_run, ttl_seconds=lock_ttl
-            )
+            lock_token = redis.acquire(booking, dry_run=dry_run, ttl_seconds=lock_ttl)
             if not lock_token:
                 return _response(
                     self,
