@@ -39,7 +39,7 @@ which should be sent in this form:
 `family-id`: Optional. it's the id for the person who wants to book a class in case the account has more than one member. 
 The value for this parameter can be found by inspecting the requests with the browser, as with the field `box-id`.
 
-`proxy`: Optional. If you want to use a proxy, you can set it with the format `socks5://ip:port`.
+`proxy`: Optional. For the Python CLI, set the `PROXY` environment variable (for example, `socks5://ip:port`). Avoid passing proxy credentials as command-line arguments.
 
 ## Protected QStash scheduling API (Preview only)
 
@@ -88,7 +88,7 @@ You can use env files for configuration and credentials instead of passing them 
 
 ## 🚨 Proxy note 🚨
 
-It appears that AimHarder has started blocking connections by returning a 403 error based on the IP address location. If you are running this script from outside Spain, you may encounter these errors, which is why the proxy argument has been added.
+It appears that AimHarder has started blocking connections by returning a 403 error based on the IP address location. If you are running this script from outside Spain, you may encounter these errors, which is why optional proxy support is available through the `PROXY` environment variable.
 
 The United States seems to be heavily blocked (possibly only Azure IPs), so running this script from GitHub Actions will likely fail without a proxy. While this is not confirmed, it seems AimHarder doesn't like the use of automated scripts, especially when run for free via GitHub Actions 😀. If you choose this approach, ensure you use a proxy that is not blocked by AimHarder.
 
