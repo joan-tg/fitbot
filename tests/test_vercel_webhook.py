@@ -191,11 +191,15 @@ def test_pre_booking_aimharder_outage_releases_live_lock_for_retry(monkeypatch):
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
-    monkeypatch.setattr(book_api, "load_config", lambda path: {
-        "timezone": "Europe/Madrid",
-        "window_minutes": 30,
-        "bookings": [booking],
-    })
+    monkeypatch.setattr(
+        book_api,
+        "load_config",
+        lambda path: {
+            "timezone": "Europe/Madrid",
+            "window_minutes": 30,
+            "bookings": [booking],
+        },
+    )
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
 
     def fail_before_booking(*args, **kwargs):
