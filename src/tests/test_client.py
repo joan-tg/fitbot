@@ -11,9 +11,9 @@ from client import AimHarderClient
 from exceptions import (
     MESSAGE_BOOKING_FAILED_NO_CREDIT,
     MESSAGE_BOOKING_FAILED_PENDING_PAYMENT,
-    MESSAGE_BOOKING_FAILED_UNKNOWN,
     MESSAGE_TOO_SOON_TO_BOOK,
     BookingFailed,
+    BookingUnconfirmed,
     IncorrectCredentials,
     TooManyWrongAttempts,
 )
@@ -73,17 +73,16 @@ class TestAimHarderClient:
             m_post.return_value.json.return_value = LOGIN_OK
             AimHarderClient._login(email="foo", password="bar")
 
-        assert m_post.call_args.kwargs["data"] == (
-            '{"username":"foo","password":"bar","iniframe":0}'
-        )
+        assert m_post.call_args.kwargs["json"] == {
+            "username": "foo",
+            "password": "bar",
+            "iniframe": 0,
+        }
+        assert m_post.call_args.kwargs["timeout"] == AimHarderClient.REQUEST_TIMEOUT
 
     @pytest.mark.parametrize(
         "response, expected_classes",
         (
-            (
-                {},
-                None,
-            ),
             (
                 {"bookings": []},
                 [],
@@ -104,10 +103,18 @@ class TestAimHarderClient:
 
         with patch("requests.Session.get") as m_get:
             m_get.return_value.json.return_value = response
-            assert (
-                client.get_classes(datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC))
-                == expected_classes
-            )
+            if expected_classes is None:
+                with pytest.raises(ValueError, match="invalid classes response"):
+                    client.get_classes(
+                        datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC)
+                    )
+            else:
+                assert (
+                    client.get_classes(
+                        datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC)
+                    )
+                    == expected_classes
+                )
 
     @pytest.mark.parametrize(
         "response, status_code, expectation",
@@ -115,7 +122,7 @@ class TestAimHarderClient:
             (
                 None,
                 HTTPStatus.INTERNAL_SERVER_ERROR,
-                pytest.raises(BookingFailed, match=MESSAGE_BOOKING_FAILED_UNKNOWN),
+                pytest.raises(BookingUnconfirmed, match="not confirmed"),
             ),
             (
                 {},
@@ -154,9 +161,17 @@ class TestAimHarderClient:
                 email="foo", password="bar", box_id=1, box_name="foo"
             )
 
-        with patch("requests.Session.post") as m_post:
+        with (
+            patch("requests.Session.post") as m_post,
+            patch("requests.Session.get") as m_get,
+        ):
             m_post.return_value.json.return_value = response
             m_post.return_value.status_code = status_code
+            m_get.return_value.json.return_value = {
+                "bookings": [
+                    {"id": "123", "bookState": 0 if status_code != HTTPStatus.OK else 1}
+                ]
+            }
             with expectation:
                 client.book_class(
                     datetime.datetime(2022, 3, 2, tzinfo=datetime.UTC), "123"
