@@ -23,6 +23,10 @@ class BookingFailed(Exception):
     pass
 
 
+class BookingUnconfirmed(Exception):
+    """AimHarder did not let us verify whether the booking succeeded."""
+
+
 class NoBookingGoal(Exception):
     pass
 
