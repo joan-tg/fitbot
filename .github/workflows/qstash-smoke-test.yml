@@ -1,5 +1,6 @@
 name: QStash webhook smoke test
 # Preview-only end-to-end Redis probe. Never contacts AimHarder.
+# Trigger note: this workflow is dispatched by a scoped push on the feature branch.
 
 on:
   workflow_dispatch:
