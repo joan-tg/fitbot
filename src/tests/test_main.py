@@ -92,16 +92,28 @@ class TestMain:
             patch("requests.Session.get") as m_get,
         ):
             m_post.side_effect = self.mock_request_post
-            m_get.return_value.json.return_value = {
-                "bookings": [
-                    {
-                        "id": 123,
-                        "timeid": "1700_60",
-                        "className": "Provenza",
-                        "bookState": None,
-                    }
-                ]
-            }
+            m_get.return_value.json.side_effect = [
+                {
+                    "bookings": [
+                        {
+                            "id": 123,
+                            "timeid": "1700_60",
+                            "className": "Provenza",
+                            "bookState": None,
+                        }
+                    ]
+                },
+                {
+                    "bookings": [
+                        {
+                            "id": 123,
+                            "timeid": "1700_60",
+                            "className": "Provenza",
+                            "bookState": 1,
+                        }
+                    ]
+                },
+            ]
             main(
                 email="foo",
                 password="bar",
