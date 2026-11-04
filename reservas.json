@@ -35,6 +35,12 @@
       "opens_at": "2026-11-03T08:00:00",
       "time": "08:00",
       "name": "Strength & Conditioning"
+    },
+    {
+      "date": "2026-11-09",
+      "opens_at": "2026-11-05T00:20:00",
+      "time": "09:00",
+      "name": "Weightlifting"
     }
   ]
 }
