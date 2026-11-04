@@ -55,7 +55,11 @@ jobs:
               --data "$payload" \
               "https://qstash.upstash.io/v2/publish/$WEBHOOK_URL")"
             echo "QStash $step publish HTTP: $status_code"
-            cat "$response_file"
+            if ! jq -e '.messageId | type == "string" and length > 0' "$response_file" >/dev/null; then
+              echo "::error::QStash did not return a message ID"
+              rm -f "$response_file"
+              return 1
+            fi
             rm -f "$response_file"
             test "$status_code" -ge 200 && test "$status_code" -lt 300
           }
