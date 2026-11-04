@@ -72,7 +72,9 @@ class AimHarderClient:
         )
         response.raise_for_status()
         payload = response.json()
-        if not isinstance(payload, dict) or not isinstance(payload.get("bookings"), list):
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("bookings"), list
+        ):
             raise ValueError("AimHarder returned an invalid classes response")
         return payload["bookings"]
 
