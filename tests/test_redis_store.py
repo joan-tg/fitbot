@@ -32,7 +32,7 @@ class FakeSession:
         return FakeResponse(next(self.results))
 
 
-def test_acquire_uses_upstash_json_set_nx_ex_command():
+def test_acquire_uses_atomic_set_nx_ex_and_returns_owner_token():
     session = FakeSession(["OK"])
     redis = UpstashRedis(
         url="https://example.upstash.io/",
@@ -40,23 +40,24 @@ def test_acquire_uses_upstash_json_set_nx_ex_command():
         session=session,
     )
 
-    assert redis.acquire(BOOKING, dry_run=True, ttl_seconds=60) is True
+    token = redis.acquire(BOOKING, dry_run=True, ttl_seconds=300)
 
+    assert isinstance(token, str) and len(token) == 32
     url, kwargs = session.calls[0]
     assert url == "https://example.upstash.io"
-    assert kwargs["json"] == [
+    assert kwargs["json"][:5] == [
         "SET",
         redis.booking_key(BOOKING, dry_run=True),
-        "processing",
+        token,
         "NX",
         "EX",
-        60,
     ]
+    assert kwargs["json"][5] == 300
     assert kwargs["headers"] == {"Authorization": "Bearer test-token"}
     assert kwargs["timeout"] == 8
 
 
-def test_acquire_returns_false_when_lock_already_exists():
+def test_acquire_returns_none_when_lock_already_exists():
     session = FakeSession([None])
     redis = UpstashRedis(
         url="https://example.upstash.io",
@@ -64,7 +65,42 @@ def test_acquire_returns_false_when_lock_already_exists():
         session=session,
     )
 
-    assert redis.acquire(BOOKING, dry_run=True) is False
+    assert redis.acquire(BOOKING, dry_run=True) is None
+
+
+def test_complete_updates_only_lock_owned_by_this_invocation():
+    session = FakeSession([1])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    assert redis.complete(BOOKING, "owner-token", "booking_confirmed") is True
+    command = session.calls[0][1]["json"]
+    assert command[0] == "EVAL"
+    assert "redis.call('GET', KEYS[1]) == ARGV[1]" in command[1]
+    assert command[3:] == [
+        redis.booking_key(BOOKING),
+        "owner-token",
+        "booking_confirmed",
+        60,
+    ]
+
+
+def test_release_deletes_only_lock_owned_by_this_invocation():
+    session = FakeSession([1])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    assert redis.release(BOOKING, "owner-token") is True
+    command = session.calls[0][1]["json"]
+    assert command[0] == "EVAL"
+    assert "redis.call('DEL', KEYS[1])" in command[1]
+    assert command[3:] == [redis.booking_key(BOOKING), "owner-token"]
 
 
 def test_acquire_fails_closed_when_upstash_request_fails():
