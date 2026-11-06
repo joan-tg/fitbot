@@ -126,3 +126,47 @@ def test_missing_credentials_fail_closed(monkeypatch):
 
     with pytest.raises(RedisUnavailable):
         UpstashRedis()
+
+
+def test_record_booking_result_uses_one_bounded_redis_command():
+    session = FakeSession([1])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    count = redis.record_booking_result(
+        {
+            "date": "2026-11-09",
+            "time": "18:15",
+            "class": "Strength Conditioning",
+            "status": "booking_confirmed",
+            "dry_run": False,
+        }
+    )
+
+    assert count == 1
+    command = session.calls[0][1]["json"]
+    assert command[0] == "EVAL"
+    assert "LPUSH" in command[1]
+    assert "LTRIM" in command[1]
+    assert "EXPIRE" in command[1]
+    assert command[3] == redis.RESULTS_KEY
+    assert command[5:] == [redis.RESULTS_MAX_ITEMS - 1, redis.RESULTS_TTL_SECONDS]
+
+
+def test_list_booking_results_reads_and_decodes_json_records():
+    record = '{"status":"class_not_found","class":"Strength Conditioning"}'
+    session = FakeSession([[record]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    results = redis.list_booking_results(limit=10)
+
+    assert results == [{"status": "class_not_found", "class": "Strength Conditioning"}]
+    assert session.calls[0][1]["json"] == ["LRANGE", redis.RESULTS_KEY, 0, 9]
+
