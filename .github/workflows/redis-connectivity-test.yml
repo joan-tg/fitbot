@@ -1,0 +1,51 @@
+name: Safe Redis connectivity test
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/vercel-qstash-webhook
+    paths:
+      - .github/workflows/redis-connectivity-test.yml
+
+permissions:
+  contents: read
+
+jobs:
+  redis-connectivity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify Upstash Redis connection and atomic lock
+        shell: bash
+        env:
+          REDIS_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$REDIS_URL"
+          test -n "$REDIS_TOKEN"
+          BASE="${REDIS_URL%/}"
+          KEY="fitbot:connectivity-test:$RANDOM-$RANDOM-$(date +%s)"
+          AUTH="Authorization: Bearer $REDIS_TOKEN"
+          cleanup() {
+            curl -sS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+              --data "[\"DEL\",\"$KEY\"]" "$BASE" >/dev/null || true
+          }
+          trap cleanup EXIT
+
+          echo "Stage 1/3: SET NX EX"
+          FIRST=$(curl -sS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            --data "[\"SET\",\"$KEY\",\"probe\",\"NX\",\"EX\",60]" "$BASE")
+          echo "$FIRST" | jq -e 'if has("error") then error(.error) else .result == "OK" end' >/dev/null
+
+          echo "Stage 2/3: duplicate SET NX"
+          SECOND=$(curl -sS -X POST -H "$AUTH" -H "Content-Type: application/json" \
+            --data "[\"SET\",\"$KEY\",\"duplicate\",\"NX\",\"EX\",60]" "$BASE")
+          echo "$SECOND" | jq -e 'if has("error") then error(.error) else .result == null end' >/dev/null
+
+          echo "Stage 3/3: GET"
+          READBACK=$(curl -sS -H "$AUTH" "$BASE/get/$KEY")
+          echo "$READBACK" | jq -e 'if has("error") then error(.error) else .result == "probe" end' >/dev/null
+
+          echo "PASS: Redis authentication, SET NX, EX TTL and GET verified."

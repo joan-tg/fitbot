@@ -27,6 +27,7 @@ class FakeClient:
 
     def book_class(self, target_day, class_id, family_id=None):
         self.book_calls.append((target_day, class_id, family_id))
+        return True
 
 
 def config():
@@ -51,7 +52,8 @@ def config():
 def test_does_nothing_before_opening_without_credentials(monkeypatch):
     monkeypatch.delenv("EMAIL", raising=False)
     monkeypatch.delenv("PASSWORD", raising=False)
-    scheduled.run(config(), now=datetime(2026, 11, 1, 17, 14, tzinfo=TZ))
+    result = scheduled.run(config(), now=datetime(2026, 11, 1, 17, 14, tzinfo=TZ))
+    assert result == {"status": "not_due", "processed": 0}
 
 
 def test_due_booking_uses_dry_run_by_default(monkeypatch, caplog):
@@ -66,7 +68,7 @@ def test_due_booking_uses_dry_run_by_default(monkeypatch, caplog):
         clients.append(client)
         return client
 
-    scheduled.run(
+    result = scheduled.run(
         config(),
         now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
         client_class=factory,
@@ -74,6 +76,53 @@ def test_due_booking_uses_dry_run_by_default(monkeypatch, caplog):
 
     assert len(clients) == 1
     assert "DRY RUN: would book 17:15 Weightlifting" in caplog.text
+    assert clients[0].book_calls == []
+    assert result["outcomes"][0]["status"] == "dry_run"
+
+
+def test_environment_dry_run_true_overrides_live_repository_config(monkeypatch):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("DRY_RUN", "true")
+    live_config = config()
+    live_config["dry_run"] = False
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        live_config,
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "dry_run"
+    assert clients[0].book_calls == []
+
+
+def test_repository_config_false_cannot_enable_live_booking(monkeypatch):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.delenv("DRY_RUN", raising=False)
+    live_config = config()
+    live_config["dry_run"] = False
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        live_config,
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "dry_run"
     assert clients[0].book_calls == []
 
 
@@ -93,14 +142,106 @@ def test_already_booked_class_is_not_booked(monkeypatch):
             ]
 
     client = AlreadyBookedClient()
-    scheduled.run(
+    result = scheduled.run(
         config(),
         now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
         client_class=lambda **kwargs: client,
     )
     assert client.book_calls == []
+    assert result["outcomes"][0]["status"] == "already_booked"
 
 
 def test_naive_now_is_rejected():
     with pytest.raises(ValueError, match="timezone"):
         scheduled.run(config(), now=datetime(2026, 11, 1, 17, 20))
+
+
+@pytest.mark.parametrize("value", ["0", "no", "", "False-ish"])
+def test_unrecognized_environment_values_keep_dry_run_enabled(monkeypatch, value):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("DRY_RUN", value)
+    live_config = config()
+    live_config["dry_run"] = False
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        live_config,
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "dry_run"
+    assert clients[0].book_calls == []
+
+
+def test_only_explicit_false_enables_live_booking(monkeypatch):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("DRY_RUN", "false")
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        config(),
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert result["outcomes"][0]["status"] == "booking_confirmed"
+    assert len(clients[0].book_calls) == 1
+
+
+def test_rejects_duplicate_booking_entries():
+    duplicate_config = config()
+    duplicate_config["bookings"].append(dict(duplicate_config["bookings"][0]))
+    with pytest.raises(ValueError, match="Duplicate booking"):
+        scheduled.validate_config(duplicate_config)
+
+
+@pytest.mark.parametrize(
+    "change, message",
+    [
+        ({"time": "25:61"}, "invalid date/time"),
+        ({"opens_at": "2026-11-04T17:15:00"}, "must be before class start"),
+        ({"date": "not-a-date"}, "invalid date/time"),
+    ],
+)
+def test_rejects_invalid_booking_schedule(change, message):
+    invalid_config = config()
+    invalid_config["bookings"][0].update(change)
+    with pytest.raises(ValueError, match=message):
+        scheduled.validate_config(invalid_config)
+
+
+def test_rejects_non_positive_execution_window():
+    invalid_config = config()
+    invalid_config["window_minutes"] = 0
+    with pytest.raises(ValueError, match="positive integer"):
+        scheduled.validate_config(invalid_config)
+
+
+def test_rejects_booking_with_missing_required_field():
+    invalid_config = config()
+    del invalid_config["bookings"][0]["opens_at"]
+    with pytest.raises(ValueError, match="missing: opens_at"):
+        scheduled.validate_config(invalid_config)
+
+
+def test_booking_is_not_due_after_window(monkeypatch):
+    monkeypatch.delenv("EMAIL", raising=False)
+    monkeypatch.delenv("PASSWORD", raising=False)
+    result = scheduled.run(
+        config(),
+        now=datetime(2026, 11, 1, 17, 45, 1, tzinfo=TZ),
+    )
+    assert result == {"status": "not_due", "processed": 0}

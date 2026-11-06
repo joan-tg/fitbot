@@ -1,0 +1,96 @@
+name: QStash webhook smoke test
+# Preview-only end-to-end Redis probe. Never contacts AimHarder.
+# Trigger note: this workflow is dispatched by a scoped push on the feature branch.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/vercel-qstash-webhook
+    paths:
+      - ".github/workflows/qstash-smoke-test.yml"
+      - "api/book.py"
+      - "src/redis_store.py"
+
+permissions:
+  contents: read
+
+jobs:
+  publish-test-message:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Wait for the Preview deployment
+        run: sleep 90
+
+      - name: Publish signed probes and verify persistent Redis evidence
+        env:
+          QSTASH_TOKEN: ${{ secrets.QSTASH_TOKEN }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          REDIS_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          REDIS_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          WEBHOOK_URL: https://fitbot-git-feature-vercel-qstash-webhook-joan-tgs-projects.vercel.app/api/book
+          PROBE_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in QSTASH_TOKEN VERCEL_AUTOMATION_BYPASS_SECRET REDIS_URL REDIS_TOKEN; do
+            test -n "${!name}" || { echo "::error::$name missing"; exit 1; }
+          done
+
+          BASE="${REDIS_URL%/}"
+          AUTH="Authorization: Bearer $REDIS_TOKEN"
+          publish() {
+            local step="$1"
+            local payload response_file status_code
+            payload="$(jq -cn --arg id "$PROBE_ID" --arg step "$step" \
+              '{date:$id,time:"probe",name:"FITBOT_QSTASH_REDIS_INTEGRATION_TEST",probe_id:$id,probe_step:$step}')"
+            response_file="$(mktemp)"
+            status_code="$(curl --silent --show-error --output "$response_file" --write-out "%{http_code}" \
+              --request POST \
+              --header "Authorization: Bearer $QSTASH_TOKEN" \
+              --header "Content-Type: application/json" \
+              --header "Upstash-Retries: 0" \
+              --header "Upstash-Forward-x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+              --data "$payload" \
+              "https://qstash.upstash.io/v2/publish/$WEBHOOK_URL")"
+            echo "QStash $step publish HTTP: $status_code"
+            if ! jq -e '.messageId | type == "string" and length > 0' "$response_file" >/dev/null; then
+              echo "::error::QStash did not return a message ID"
+              rm -f "$response_file"
+              return 1
+            fi
+            rm -f "$response_file"
+            test "$status_code" -ge 200 && test "$status_code" -lt 300
+          }
+
+          echo "Publishing first signed probe"
+          publish first
+          sleep 3
+          echo "Publishing duplicate signed probe"
+          publish second
+
+          get_result() {
+            local step="$1"
+            curl --silent --show-error --fail \
+              --header "$AUTH" \
+              "$BASE/get/fitbot:integration:$PROBE_ID:$step" | jq -r '.result // empty'
+          }
+
+          echo "Waiting for both webhook executions to write evidence to Redis..."
+          for attempt in $(seq 1 24); do
+            FIRST="$(get_result first || true)"
+            SECOND="$(get_result second || true)"
+            if [[ "$FIRST" == "integration_test_lock_acquired" && "$SECOND" == "integration_test_duplicate" ]]; then
+              echo "PASS: QStash -> Vercel -> Redis verified."
+              echo "First delivery: $FIRST"
+              echo "Second delivery: $SECOND"
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "::error::Integration evidence missing or unexpected."
+          echo "First result: ${FIRST:-<missing>}"
+          echo "Second result: ${SECOND:-<missing>}"
+          exit 1
