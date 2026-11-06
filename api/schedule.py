@@ -1,4 +1,4 @@
-"""Protected Preview-only endpoint for one-off QStash schedules (DRY_RUN only)."""
+"""Protected Preview-only endpoint for one-off QStash schedules."""
 
 import hmac
 import json
@@ -43,9 +43,6 @@ def _authorized(handler):
 def _schedule_booking(booking):
     if os.environ.get("VERCEL_ENV") != "preview":
         raise PermissionError("Administrative scheduling is Preview-only")
-    if os.environ.get("DRY_RUN", "true").lower() != "true":
-        raise PermissionError("Scheduling requires DRY_RUN=true")
-
     config = load_config(ROOT / "reservas.json")
     fields = ("date", "opens_at", "time", "name")
     matches = [
@@ -108,8 +105,6 @@ class handler(BaseHTTPRequestHandler):
             return _respond(self, 401, {"error": "Unauthorized"})
         if os.environ.get("VERCEL_ENV") != "preview":
             return _respond(self, 403, {"error": "Preview environment only"})
-        if os.environ.get("DRY_RUN", "true").lower() != "true":
-            return _respond(self, 403, {"error": "DRY_RUN=true is required"})
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
