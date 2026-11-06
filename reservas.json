@@ -53,6 +53,12 @@
       "opens_at": "2026-11-06T18:15:00",
       "time": "18:15",
       "name": "Strength Conditioning"
+    },
+    {
+      "date": "2026-11-10",
+      "opens_at": "2026-11-07T09:00:00",
+      "time": "09:00",
+      "name": "Strength Conditioning"
     }
   ]
 }
