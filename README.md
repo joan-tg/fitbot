@@ -43,7 +43,7 @@ The value for this parameter can be found by inspecting the requests with the br
 
 ## Protected QStash scheduling API (Preview only)
 
-The `POST /api/schedule` endpoint creates a one-off QStash message for a booking already present in `reservas.json`. It is intentionally restricted to Vercel Preview deployments and requires `DRY_RUN=true`.
+The `POST /api/schedule` endpoint creates a one-off QStash message for a booking already present in `reservas.json`. It is intentionally restricted to Vercel Preview deployments and requires the administrative bearer token. It can publish schedules while `DRY_RUN=false`; the booking execution mode is determined separately by `DRY_RUN` when `/api/book` runs.
 
 Configure these environment variables in the **Preview** environment only:
 
@@ -61,7 +61,7 @@ curl --request POST "https://YOUR-PREVIEW-URL/api/schedule" \
   --data '{"date":"2026-11-06","opens_at":"2026-11-03T08:00:00","time":"08:00","name":"Strength & Conditioning"}'
 ```
 
-The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview with dry-run enabled. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. This endpoint does not expose QStash credentials and does not provide live-booking activation.
+The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. This endpoint does not expose QStash credentials and does not provide live-booking activation.
 
 ## Using env files
 
