@@ -248,6 +248,21 @@ class handler(BaseHTTPRequestHandler):
                     ttl_seconds=LIVE_LOCK_TTL,
                 )
 
+            # Result history is best-effort: a history write must never change
+            # the booking outcome or trigger a duplicate reservation.
+            try:
+                redis.record_booking_result(
+                    {
+                        "date": booking["date"],
+                        "time": booking["time"],
+                        "class": booking["name"],
+                        "status": outcome,
+                        "dry_run": dry_run,
+                    }
+                )
+            except RedisUnavailable:
+                logger.exception("Could not save booking result history")
+
             return _response(
                 self,
                 200,
