@@ -122,7 +122,7 @@ class UpstashRedis:
 
     @staticmethod
     def integration_result_key(probe_id, step):
-        safe_id = re.sub(r"[^\\w-]", "", str(probe_id))
+        safe_id = re.sub(r"[^\w-]", "", str(probe_id))
         if not safe_id or step not in ("first", "second"):
             raise ValueError("Invalid integration probe identifier")
         return f"fitbot:integration:{safe_id}:{step}"
