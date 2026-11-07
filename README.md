@@ -41,16 +41,18 @@ The value for this parameter can be found by inspecting the requests with the br
 
 `proxy`: Optional. For the Python CLI, set the `PROXY` environment variable (for example, `socks5://ip:port`). Avoid passing proxy credentials as command-line arguments.
 
-## Protected QStash scheduling API (Preview only)
+## Protected QStash scheduling API (Preview and Production)
 
-The `POST /api/schedule` endpoint creates a one-off QStash message for a booking already present in `reservas.json`. It is intentionally restricted to Vercel Preview deployments and requires the administrative bearer token. It can publish schedules while `DRY_RUN=false`; the booking execution mode is determined separately by `DRY_RUN` when `/api/book` runs.
+The `POST /api/schedule` endpoint creates a one-off QStash message for a booking already present in `reservas.json`. It is available only on Vercel Preview and Production deployments and always requires the administrative bearer token. It can publish schedules while `DRY_RUN=false`; the booking execution mode is determined separately by `DRY_RUN` when `/api/book` runs.
 
-Configure these environment variables in the **Preview** environment only:
+Configure these environment variables separately for **Preview** and **Production** in Vercel:
 
-- `FITBOT_ADMIN_TOKEN`: a long, random administrative bearer token. Generate it outside ChatGPT and store it as a Vercel Preview environment variable.
+- `FITBOT_ADMIN_TOKEN`: a long, random administrative bearer token. Use a strong value and keep it secret.
 - `QSTASH_TOKEN`: QStash publishing token.
-- `FITBOT_WEBHOOK_URL`: exact public URL of `/api/book`.
-- `VERCEL_AUTOMATION_BYPASS_SECRET`: the current Vercel Deployment Protection automation-bypass secret. The endpoint forwards it to QStash using `Upstash-Forward-x-vercel-protection-bypass`, so QStash can reach the protected Preview webhook.
+- `FITBOT_WEBHOOK_URL`: exact public URL of `/api/book` for that environment. Preview and Production must use their own deployment URLs.
+- `VERCEL_AUTOMATION_BYPASS_SECRET`: required for protected Preview deployments. It is forwarded to QStash using `Upstash-Forward-x-vercel-protection-bypass`. Configure it for Production too if the Production deployment is protected by Vercel Authentication; otherwise it may be omitted there.
+
+For **Production**, also configure the runtime variables used by `/api/book`: `EMAIL`, `PASSWORD`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, and `DRY_RUN=false`. Keep `DRY_RUN=true` in Preview unless you intentionally want real bookings there.
 
 Example request (do not put real tokens in source control or chat):
 
@@ -61,7 +63,7 @@ curl --request POST "https://YOUR-PREVIEW-URL/api/schedule" \
   --data '{"date":"2026-11-06","opens_at":"2026-11-03T08:00:00","time":"08:00","name":"Strength & Conditioning"}'
 ```
 
-The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. This endpoint does not expose QStash credentials and does not provide live-booking activation.
+The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview or Production. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. The response does not claim a dry-run/live mode: `/api/book` reads `DRY_RUN` when the message is delivered.
 
 ## Using env files
 
