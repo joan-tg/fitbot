@@ -8,7 +8,6 @@ import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import requests
