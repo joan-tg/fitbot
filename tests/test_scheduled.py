@@ -201,6 +201,28 @@ def test_only_explicit_false_enables_live_booking(monkeypatch):
     assert len(clients[0].book_calls) == 1
 
 
+
+def test_force_dry_run_overrides_explicit_live_environment(monkeypatch):
+    monkeypatch.setenv("EMAIL", "test@example.com")
+    monkeypatch.setenv("PASSWORD", "not-a-real-password")
+    monkeypatch.setenv("DRY_RUN", "false")
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        config(),
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+        force_dry_run=True,
+    )
+
+    assert result["outcomes"][0]["status"] == "dry_run"
+    assert clients[0].book_calls == []
+
 def test_rejects_duplicate_booking_entries():
     duplicate_config = config()
     duplicate_config["bookings"].append(dict(duplicate_config["bookings"][0]))
