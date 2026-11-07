@@ -4,7 +4,7 @@ ENV PYTHONPATH=src
 WORKDIR /app
 
 COPY src /app/src
-COPY Makefile pyproject.toml /app/
+COPY Makefile pyproject.toml uv.lock /app/
 
 RUN pip install uv
 
