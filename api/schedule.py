@@ -1,4 +1,4 @@
-"""Protected Preview-only endpoint for one-off QStash schedules."""
+"""Protected Preview/Production endpoint for one-off QStash schedules."""
 
 import hmac
 import json
@@ -41,8 +41,11 @@ def _authorized(handler):
 
 
 def _schedule_booking(booking):
-    if os.environ.get("VERCEL_ENV") != "preview":
-        raise PermissionError("Administrative scheduling is Preview-only")
+    deployment_env = os.environ.get("VERCEL_ENV")
+    if deployment_env not in ("preview", "production"):
+        raise PermissionError(
+            "Scheduling is available only in Vercel Preview or Production"
+        )
     config = load_config(ROOT / "reservas.json")
     fields = ("date", "opens_at", "time", "name")
     matches = [
@@ -65,20 +68,29 @@ def _schedule_booking(booking):
     qstash_token = os.environ.get("QSTASH_TOKEN")
     webhook_url = os.environ.get("FITBOT_WEBHOOK_URL")
     vercel_bypass_secret = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET")
-    if not qstash_token or not webhook_url or not vercel_bypass_secret:
-        raise RuntimeError("QStash publishing or Vercel bypass is not configured")
+    if not qstash_token or not webhook_url:
+        raise RuntimeError("QStash publishing is not configured")
+    if deployment_env == "preview" and not vercel_bypass_secret:
+        raise RuntimeError("Vercel Preview bypass is not configured")
 
     not_before = int(opens_at.astimezone(timezone.utc).timestamp())
     destination = webhook_url
+    headers = {
+        "Authorization": f"Bearer {qstash_token}",
+        "Content-Type": "application/json",
+        "Upstash-Not-Before": str(not_before),
+    }
+    # Preview deployments may be protected by Vercel Authentication.
+    # Production can use the same bypass when protection is enabled, but
+    # does not require it when the production domain is publicly reachable.
+    if vercel_bypass_secret:
+        headers["Upstash-Forward-x-vercel-protection-bypass"] = (
+            vercel_bypass_secret
+        )
     response = requests.post(
         f"https://qstash.upstash.io/v2/publish/{destination}",
         json=matches[0],
-        headers={
-            "Authorization": f"Bearer {qstash_token}",
-            "Content-Type": "application/json",
-            "Upstash-Not-Before": str(not_before),
-            "Upstash-Forward-x-vercel-protection-bypass": vercel_bypass_secret,
-        },
+        headers=headers,
         timeout=10,
     )
     response.raise_for_status()
@@ -94,7 +106,7 @@ def _schedule_booking(booking):
         "message_id": message_id,
         "scheduled_at": opens_at.isoformat(),
         "timezone": timezone_name,
-        "dry_run": True,
+        "execution_mode": "determined_when_webhook_runs",
         "booking": matches[0],
     }
 
@@ -103,8 +115,12 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not _authorized(self):
             return _respond(self, 401, {"error": "Unauthorized"})
-        if os.environ.get("VERCEL_ENV") != "preview":
-            return _respond(self, 403, {"error": "Preview environment only"})
+        if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
+            return _respond(
+                self,
+                403,
+                {"error": "Vercel Preview or Production environment only"},
+            )
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
