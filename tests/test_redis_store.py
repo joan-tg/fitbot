@@ -375,10 +375,11 @@ def test_create_booking_idempotent_returns_existing_booking_for_same_request():
 
 
 def test_create_booking_idempotent_rejects_reused_key_for_different_request():
-    existing = json.dumps({
+    existing_record = {
         "booking_id": "a" * 32,
         "fingerprint": "different-fingerprint",
-    })
+    }
+    existing = json.dumps(existing_record)
     redis = UpstashRedis(
         url="https://example.upstash.io",
         token="test-token",
