@@ -188,7 +188,7 @@ class handler(BaseHTTPRequestHandler):
         run_config["bookings"] = [booking]
         run_config["dry_run"] = dry_run
         try:
-            result = run(run_config, now=now)
+            result = run(run_config, now=now, force_dry_run=dry_run)
         except IncorrectCredentials:
             outcome = "incorrect_credentials"
             set_status("booking_failed", outcome)
