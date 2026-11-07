@@ -92,6 +92,62 @@ def _is_booking_due(booking, timezone, now, window_minutes):
     return timedelta(0) <= elapsed <= timedelta(minutes=window_minutes)
 
 
+def _recover_stale_processing(booking, redis, dry_run, now=None):
+    """Mark an abandoned processing attempt as uncertain without retrying it."""
+    raw_updated_at = booking.get("updated_at")
+    if not isinstance(raw_updated_at, str):
+        return False
+    try:
+        updated_at = datetime.fromisoformat(raw_updated_at)
+    except ValueError:
+        return False
+    if updated_at.tzinfo is None:
+        return False
+
+    now = now or datetime.now(updated_at.tzinfo)
+    if now.tzinfo is None:
+        raise ValueError("Recovery time must include a timezone")
+    age = now - updated_at
+    if age <= timedelta(seconds=PROCESSING_LOCK_TTL):
+        return False
+
+    recovered = redis.update_booking_status(
+        booking["id"],
+        "outcome_unconfirmed",
+        expected_statuses=["processing"],
+        metadata={"error_code": "stale_processing_recovered"},
+    )
+    if recovered is None:
+        return False
+
+    # The original five-minute lease should have expired. If it has, replace
+    # it with a terminal safety lock. A live booking must never be retried
+    # automatically after an interrupted attempt with an unknown remote result.
+    lock_token = redis.acquire(
+        booking,
+        dry_run=dry_run,
+        ttl_seconds=PROCESSING_LOCK_TTL,
+    )
+    if lock_token:
+        redis.complete(
+            booking,
+            lock_token,
+            "outcome_unconfirmed",
+            dry_run=dry_run,
+            ttl_seconds=LIVE_LOCK_TTL if not dry_run else 60,
+        )
+    else:
+        logger.warning(
+            "Recovered stale processing booking %s; an existing lock remains",
+            booking["id"],
+        )
+    logger.error(
+        "Recovered stale processing booking %s as outcome_unconfirmed",
+        booking["id"],
+    )
+    return True
+
+
 class handler(BaseHTTPRequestHandler):
     def _handle_dynamic_booking(self, payload, config):
         booking_id = payload.get("booking_id")
@@ -106,6 +162,27 @@ class handler(BaseHTTPRequestHandler):
         status = booking.get("status")
         if status == "cancelled":
             return _response(self, 200, {"status": "cancelled_ignored"})
+
+        # Preview remains forcibly dry-run. Determine the lock namespace before
+        # inspecting stale processing records so recovery uses the same namespace.
+        is_preview = os.environ.get("VERCEL_ENV") == "preview"
+        dry_run = is_preview or os.environ.get("DRY_RUN", "true").lower() != "false"
+        if status == "processing":
+            if _recover_stale_processing(booking, redis, dry_run=dry_run):
+                return _response(
+                    self,
+                    200,
+                    {
+                        "status": "outcome_unconfirmed",
+                        "booking_id": booking_id,
+                        "error_code": "stale_processing_recovered",
+                    },
+                )
+            return _response(
+                self,
+                200,
+                {"status": "duplicate_ignored", "booking_id": booking_id},
+            )
         if status != "scheduled":
             return _response(
                 self,
@@ -131,8 +208,6 @@ class handler(BaseHTTPRequestHandler):
         # Dynamic bookings in Preview are always simulations. This is a code-level
         # safety boundary: a mistaken DRY_RUN=false setting must never create a
         # real AimHarder reservation from a Preview deployment.
-        is_preview = os.environ.get("VERCEL_ENV") == "preview"
-        dry_run = is_preview or os.environ.get("DRY_RUN", "true").lower() != "false"
         # The lock includes person_id, so two independent accounts may book the
         # same class/time without suppressing each other's reservations.
         lock_token = redis.acquire(
