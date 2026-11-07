@@ -79,7 +79,7 @@ def parse_local_datetime(value, timezone):
     return parsed.astimezone(timezone)
 
 
-def run(config, now=None, client_class=None):
+def run(config, now=None, client_class=None, force_dry_run=False):
     validate_config(config)
     timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
     now = now or datetime.now(timezone)
@@ -136,7 +136,7 @@ def run(config, now=None, client_class=None):
         proxy=os.environ.get("PROXY") or None,
     )
     # Only an explicit environment variable can enable live booking.
-    dry_run = os.environ.get("DRY_RUN", "true").lower() != "false"
+    dry_run = force_dry_run or os.environ.get("DRY_RUN", "true").lower() != "false"
     outcomes = []
 
     for booking in due_bookings:
