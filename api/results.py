@@ -5,14 +5,14 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from redis_store import RedisUnavailable, UpstashRedis
+from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.results")
 
