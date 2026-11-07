@@ -285,8 +285,10 @@ class UpstashRedis:
 
     @staticmethod
     def booking_key(booking, dry_run=False):
+        identity_fields = ("date", "time", "name")
         identity = "|".join(
-            str(booking[field]) for field in ("date", "time", "name")
+            ([str(booking["person_id"])] if booking.get("person_id") else [])
+            + [str(booking[field]) for field in identity_fields]
         ).casefold()
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         namespace = "fitbot:dryrun" if dry_run else "fitbot:booking"
