@@ -164,9 +164,7 @@ class UpstashRedis:
         except (TypeError, json.JSONDecodeError) as error:
             raise RedisUnavailable("Stored idempotency record is invalid") from error
         if stored_request.get("fingerprint") != fingerprint:
-            raise ValueError(
-                "Idempotency-Key was already used for a different booking"
-            )
+            raise ValueError("Idempotency-Key was already used for a different booking")
         return result[0] == 1, stored_request["booking_id"]
 
     def get_booking(self, booking_id):
