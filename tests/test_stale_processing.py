@@ -99,11 +99,11 @@ def test_stale_dynamic_processing_is_marked_unconfirmed_without_retry(monkeypatc
             return True
 
     _configure(monkeypatch, book_api, booking, FakeRedis)
-    monkeypatch.setattr(
-        book_api, "run", lambda *args, **kwargs: (_ for _ in ()).throw(
-            AssertionError("stale bookings must never be retried")
-        )
-    )
+
+    def fail_if_retried(*args, **kwargs):
+        raise AssertionError("stale bookings must never be retried")
+
+    monkeypatch.setattr(book_api, "run", fail_if_retried)
 
     request = FakeHandler({"booking_id": booking["id"]})
     response = request.post()
@@ -153,6 +153,4 @@ def test_processing_with_invalid_timestamp_fails_closed():
         def update_booking_status(self, *args, **kwargs):
             raise AssertionError("invalid timestamp must not be recovered")
 
-    assert _recover_stale_processing(
-        booking, FakeRedis(), dry_run=True
-    ) is False
+    assert _recover_stale_processing(booking, FakeRedis(), dry_run=True) is False
