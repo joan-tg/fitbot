@@ -191,7 +191,6 @@ class UpstashRedis:
             records.append(record)
         return records
 
-
     def __init__(self, url=None, token=None, session=None):
         self.url = (url or os.environ.get("UPSTASH_REDIS_REST_URL", "")).rstrip("/")
         self.token = token or os.environ.get("UPSTASH_REDIS_REST_TOKEN")
