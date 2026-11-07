@@ -99,7 +99,8 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
         }
     ).encode()
     monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
 
     class FakeRedis:
@@ -481,10 +482,11 @@ def test_dynamic_booking_loads_redis_record_claims_and_records_dry_run(monkeypat
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
 
-    def fake_run(config, now=None):
+    def fake_run(config, now=None, force_dry_run=False):
         assert config["bookings"] == [booking]
         assert config["bookings"][0]["person_id"] == "person_1"
         assert config["dry_run"] is True
+        assert force_dry_run is True
         return {"status": "completed", "outcomes": [{"status": "dry_run"}]}
 
     monkeypatch.setattr(book_api, "run", fake_run)
