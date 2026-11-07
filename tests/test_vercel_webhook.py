@@ -1,6 +1,6 @@
 import json
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -55,15 +55,16 @@ class FakeHeaders(dict):
 
 
 class FakeHandler:
-    def __init__(self, payload, signature="valid"):
+    def __init__(self, payload, signature="valid", retried=None):
         import io
 
-        self.headers = FakeHeaders(
-            {
-                "Content-Length": str(len(payload)),
-                "Upstash-Signature": signature,
-            }
-        )
+        headers = {
+            "Content-Length": str(len(payload)),
+            "Upstash-Signature": signature,
+        }
+        if retried is not None:
+            headers["Upstash-Retried"] = str(retried)
+        self.headers = FakeHeaders(headers)
         self.rfile = io.BytesIO(payload)
         self.wfile = io.BytesIO()
         self.status = None
@@ -214,26 +215,40 @@ def test_pre_booking_aimharder_outage_releases_live_lock_for_retry(monkeypatch):
     assert released == [(booking, "owner-token", False)]
 
 
-@pytest.mark.parametrize(
-    ("auth_error", "expected_status"),
-    [
-        ("incorrect", "incorrect_credentials"),
-        ("locked", "too_many_wrong_attempts"),
-    ],
-)
-def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
-    monkeypatch, auth_error, expected_status
-):
-    import api.book as book_api
-    from exceptions import IncorrectCredentials, TooManyWrongAttempts
-
-    booking = {
-        "date": "2026-11-06",
-        "opens_at": "2026-11-03T10:00:00",
+def _auth_test_booking():
+    timezone = ZoneInfo("Europe/Madrid")
+    now = datetime.now(timezone)
+    return {
+        "date": now.date().isoformat(),
+        "opens_at": (now - timedelta(seconds=30)).isoformat(timespec="seconds"),
         "time": "10:00",
         "name": "Weightlifting",
     }
+
+
+def _configure_auth_test(monkeypatch, book_api, booking, redis_class, retried=None):
     payload = json.dumps(booking).encode()
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
+    monkeypatch.setattr(
+        book_api,
+        "load_config",
+        lambda path: {
+            "timezone": "Europe/Madrid",
+            "window_minutes": 30,
+            "bookings": [booking],
+        },
+    )
+    monkeypatch.setattr(book_api, "UpstashRedis", redis_class)
+    return FakeHandler(payload, retried=retried)
+
+
+def test_incorrect_credentials_are_non_retryable_and_keep_short_lock(monkeypatch):
+    import api.book as book_api
+    from exceptions import IncorrectCredentials
+
+    booking = _auth_test_booking()
     completed = []
     recorded = []
 
@@ -241,6 +256,7 @@ def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
         def acquire(self, booking_data, dry_run, ttl_seconds):
             assert booking_data == booking
             assert dry_run is False
+            assert ttl_seconds == book_api.PROCESSING_LOCK_TTL
             return "owner-token"
 
         def complete(self, booking_data, token, status, dry_run=False, ttl_seconds=60):
@@ -249,6 +265,113 @@ def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
 
         def record_booking_result(self, record):
             recorded.append(record)
+
+    def fail_login(*args, **kwargs):
+        raise IncorrectCredentials()
+
+    monkeypatch.setattr(book_api, "run", fail_login)
+    request = _configure_auth_test(monkeypatch, book_api, booking, FakeRedis)
+    response = request.post()
+
+    assert request.status == 489
+    assert request.response_headers["Upstash-NonRetryable-Error"] == "true"
+    assert response["status"] == "incorrect_credentials"
+    assert completed == [
+        (
+            booking,
+            "owner-token",
+            "incorrect_credentials",
+            False,
+            book_api.AUTH_FAILURE_LOCK_TTL,
+        )
+    ]
+    assert recorded[0]["status"] == "incorrect_credentials"
+
+
+def test_too_many_wrong_attempts_schedules_only_one_delayed_retry(monkeypatch):
+    import api.book as book_api
+    from exceptions import TooManyWrongAttempts
+
+    booking = _auth_test_booking()
+    released = []
+    recorded = []
+
+    class FakeRedis:
+        def acquire(self, booking_data, dry_run, ttl_seconds):
+            assert ttl_seconds == book_api.PROCESSING_LOCK_TTL
+            return "owner-token"
+
+        def release(self, booking_data, token, dry_run):
+            released.append((booking_data, token, dry_run))
+            return True
+
+        def record_booking_result(self, record):
+            recorded.append(record)
+
+    def fail_login(*args, **kwargs):
+        raise TooManyWrongAttempts()
+
+    monkeypatch.setattr(book_api, "run", fail_login)
+    request = _configure_auth_test(monkeypatch, book_api, booking, FakeRedis, retried=0)
+    response = request.post()
+
+    assert request.status == 503
+    assert request.response_headers["Retry-After"] == "60"
+    assert response["status"] == "too_many_wrong_attempts_retry_scheduled"
+    assert released == [(booking, "owner-token", False)]
+    assert recorded[0]["status"] == "too_many_wrong_attempts_retry_scheduled"
+
+
+def test_second_too_many_wrong_attempts_is_non_retryable(monkeypatch):
+    import api.book as book_api
+    from exceptions import TooManyWrongAttempts
+
+    booking = _auth_test_booking()
+    completed = []
+
+    class FakeRedis:
+        def acquire(self, booking_data, dry_run, ttl_seconds):
+            assert ttl_seconds == book_api.PROCESSING_LOCK_TTL
+            return "owner-token"
+
+        def complete(self, booking_data, token, status, dry_run=False, ttl_seconds=60):
+            completed.append((status, dry_run, ttl_seconds))
+            return True
+
+        def record_booking_result(self, record):
+            pass
+
+    def fail_login(*args, **kwargs):
+        raise TooManyWrongAttempts()
+
+    monkeypatch.setattr(book_api, "run", fail_login)
+    request = _configure_auth_test(monkeypatch, book_api, booking, FakeRedis, retried=1)
+    response = request.post()
+
+    assert request.status == 489
+    assert request.response_headers["Upstash-NonRetryable-Error"] == "true"
+    assert response["status"] == "too_many_wrong_attempts"
+    assert completed == [
+        ("too_many_wrong_attempts", False, book_api.AUTH_FAILURE_LOCK_TTL)
+    ]
+
+
+def test_unexpected_live_error_promotes_processing_lock_to_long_safety_lock(
+    monkeypatch,
+):
+    import api.book as book_api
+
+    booking = _auth_test_booking()
+    completed = []
+
+    class FakeRedis:
+        def acquire(self, booking_data, dry_run, ttl_seconds):
+            assert ttl_seconds == book_api.PROCESSING_LOCK_TTL
+            return "owner-token"
+
+        def complete(self, booking_data, token, status, dry_run=False, ttl_seconds=60):
+            completed.append((status, dry_run, ttl_seconds))
+            return True
 
     monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
@@ -264,36 +387,15 @@ def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
     )
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
 
-    exception_type = {
-        "incorrect": IncorrectCredentials,
-        "locked": TooManyWrongAttempts,
-    }[auth_error]
-    exception = exception_type()
+    def fail_unexpectedly(*args, **kwargs):
+        raise RuntimeError("unexpected test failure")
 
-    def fail_login(*args, **kwargs):
-        raise exception
-
-    monkeypatch.setattr(book_api, "run", fail_login)
-    request = FakeHandler(payload)
+    monkeypatch.setattr(book_api, "run", fail_unexpectedly)
+    request = FakeHandler(json.dumps(booking).encode())
     response = request.post()
 
-    assert request.status == 200
-    assert response["status"] == expected_status
+    assert request.status == 500
+    assert response["error"] == "Booking processing failed"
     assert completed == [
-        (
-            booking,
-            "owner-token",
-            expected_status,
-            False,
-            book_api.AUTH_FAILURE_LOCK_TTL,
-        )
-    ]
-    assert recorded == [
-        {
-            "date": booking["date"],
-            "time": booking["time"],
-            "class": booking["name"],
-            "status": expected_status,
-            "dry_run": False,
-        }
+        ("outcome_unconfirmed", False, book_api.LIVE_LOCK_TTL)
     ]
