@@ -205,7 +205,7 @@ def _publish_booking(booking, redis):
             expected_statuses=["scheduling"],
             metadata={
                 "message_id": message_id,
-                "scheduled_at": datetime.now(timezone.utc).isoformat(),
+                "scheduled_at": booking["opens_at"],
             },
         )
     except RedisUnavailable:
