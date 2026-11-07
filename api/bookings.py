@@ -9,7 +9,6 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 import requests
@@ -144,7 +143,7 @@ def _build_booking(payload, config, now=None, booking_id=None):
     }
 
 
-def _publish_booking(booking, redis, idempotency_key):
+def _publish_booking(booking, redis):
     """Claim a stored booking and publish only its ID to QStash."""
     claimed = redis.update_booking_status(
         booking["id"],
@@ -157,9 +156,7 @@ def _publish_booking(booking, redis, idempotency_key):
             raise RedisUnavailable("Booking disappeared during scheduling")
         return latest, False
 
-    timezone_name = os.environ.get("FITBOT_TIMEZONE", "Europe/Madrid")
-    local_tz = ZoneInfo(timezone_name)
-    opens_at = datetime.fromisoformat(booking["opens_at"]).astimezone(local_tz)
+    opens_at = datetime.fromisoformat(booking["opens_at"])
     not_before = int(opens_at.astimezone(timezone.utc).timestamp())
     destination = os.environ["FITBOT_WEBHOOK_URL"]
     headers = {
@@ -173,7 +170,7 @@ def _publish_booking(booking, redis, idempotency_key):
 
     try:
         response = requests.post(
-            f"https://qstash.upstash.io/v2/publish/{quote(destination, safe='')}",
+            f"https://qstash.upstash.io/v2/publish/{destination}",
             json={"booking_id": booking["id"]},
             headers=headers,
             timeout=10,
@@ -246,7 +243,7 @@ def _create_booking(payload, idempotency_key):
     if stored["status"] not in CLAIMABLE_STATUSES:
         return stored, False
 
-    scheduled, published = _publish_booking(stored, redis, idempotency_key)
+    scheduled, published = _publish_booking(stored, redis)
     return scheduled, published
 
 
@@ -271,14 +268,18 @@ class handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length).decode("utf-8"))
             idempotency_key = self.headers.get("Idempotency-Key")
             booking, published = _create_booking(payload, idempotency_key)
-            status = 201 if published else (202 if booking["status"] == "scheduling" else 200)
+            status = (
+                201
+                if published
+                else (202 if booking["status"] == "scheduling" else 200)
+            )
             return _respond(
                 self,
                 status,
                 {
                     "status": booking["status"],
                     "booking": booking,
-                    "created_or_scheduled": published,
+                    "qstash_published": published,
                 },
             )
         except PermissionError as error:
