@@ -1,4 +1,5 @@
 import io
+import json
 import sys
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -137,7 +138,4 @@ def test_production_schedule_does_not_require_preview_bypass(monkeypatch):
     assert result["status"] == "scheduled"
     assert result["execution_mode"] == "determined_when_webhook_runs"
     assert published["url"].endswith("/https://fitbot.example.com/api/book")
-    assert (
-        "Upstash-Forward-x-vercel-protection-bypass"
-        not in published["headers"]
-    )
+    assert "Upstash-Forward-x-vercel-protection-bypass" not in published["headers"]
