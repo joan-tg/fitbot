@@ -99,12 +99,31 @@ def run(config, now=None, client_class=None):
         logger.info("No bookings are due in the current time window.")
         return {"status": "not_due", "processed": 0}
 
-    email = os.environ.get("EMAIL")
-    password = os.environ.get("PASSWORD")
-    if not email or not password:
-        raise RuntimeError(
-            "EMAIL and PASSWORD must be configured as environment variables."
-        )
+    # Dynamic API bookings carry a person_id and resolve that member's
+    # credentials from environment-variable names in reservas.json. Legacy
+    # scheduler entries keep using EMAIL/PASSWORD unchanged.
+    person_ids = {booking.get("person_id") for booking in due_bookings}
+    if len(person_ids) > 1:
+        raise ValueError("A scheduler invocation cannot mix booking members")
+    person_id = next(iter(person_ids))
+    if person_id is not None:
+        member = config.get("members", {}).get(person_id)
+        credentials = member.get("aimharder_credentials", {}) if member else {}
+        email_env = credentials.get("email_env")
+        password_env = credentials.get("password_env")
+        if not email_env or not password_env:
+            raise RuntimeError("AimHarder credentials are not configured for this member")
+        email = os.environ.get(email_env)
+        password = os.environ.get(password_env)
+        if not email or not password:
+            raise RuntimeError("AimHarder credentials are unavailable for this member")
+    else:
+        email = os.environ.get("EMAIL")
+        password = os.environ.get("PASSWORD")
+        if not email or not password:
+            raise RuntimeError(
+                "EMAIL and PASSWORD must be configured as environment variables."
+            )
 
     client_class = client_class or AimHarderClient
     client = client_class(
