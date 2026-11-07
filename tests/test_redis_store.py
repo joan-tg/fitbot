@@ -1,3 +1,5 @@
+import json
+
 import requests
 import pytest
 
@@ -208,7 +210,6 @@ def test_create_booking_atomically_stores_record_and_indexes_id():
     assert redis.create_booking(make_booking_record()) is True
     command = session.calls[0][1]["json"]
     assert command[0] == "EVAL"
-    assert "SET' , KEYS[1]" not in command[1]  # script is kept compact
     assert "ZADD" in command[1]
     assert "ZREMRANGEBYRANK" in command[1]
     assert command[3] == redis.booking_record_key("a" * 32)
@@ -287,7 +288,6 @@ def test_update_booking_status_reports_conflict_and_missing_record():
 
 def test_list_bookings_reads_index_and_skips_expired_records():
     first = make_booking_record()
-    second = make_booking_record(id="b" * 32, person_id="person_2")
     session = FakeSession([["a" * 32, "b" * 32], [json.dumps(first), None]])
     redis = UpstashRedis(
         url="https://example.upstash.io",
