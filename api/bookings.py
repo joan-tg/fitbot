@@ -6,8 +6,8 @@ import logging
 import os
 import re
 import sys
-import uuid
 from urllib.parse import parse_qs, urlsplit
+import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
