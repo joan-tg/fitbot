@@ -112,15 +112,11 @@ def run(config, now=None, client_class=None):
         email_env = credentials.get("email_env")
         password_env = credentials.get("password_env")
         if not email_env or not password_env:
-            raise RuntimeError(
-                "AimHarder credentials are not configured for this member"
-            )
+            raise RuntimeError("AimHarder credentials are not configured for this member")
         email = os.environ.get(email_env)
         password = os.environ.get(password_env)
         if not email or not password:
-            raise RuntimeError(
-                "AimHarder credentials are unavailable for this member"
-            )
+            raise RuntimeError("AimHarder credentials are unavailable for this member")
     else:
         email = os.environ.get("EMAIL")
         password = os.environ.get("PASSWORD")
