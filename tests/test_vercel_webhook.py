@@ -396,6 +396,4 @@ def test_unexpected_live_error_promotes_processing_lock_to_long_safety_lock(
 
     assert request.status == 500
     assert response["error"] == "Booking processing failed"
-    assert completed == [
-        ("outcome_unconfirmed", False, book_api.LIVE_LOCK_TTL)
-    ]
+    assert completed == [("outcome_unconfirmed", False, book_api.LIVE_LOCK_TTL)]
