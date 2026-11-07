@@ -213,6 +213,7 @@ def test_pre_booking_aimharder_outage_releases_live_lock_for_retry(monkeypatch):
     assert response["error"] == "AimHarder unavailable before booking"
     assert released == [(booking, "owner-token", False)]
 
+
 @pytest.mark.parametrize(
     ("auth_error", "expected_status"),
     [
@@ -281,7 +282,13 @@ def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
     assert request.status == 200
     assert response["status"] == expected_status
     assert completed == [
-        (booking, "owner-token", expected_status, False, book_api.AUTH_FAILURE_LOCK_TTL)
+        (
+            booking,
+            "owner-token",
+            expected_status,
+            False,
+            book_api.AUTH_FAILURE_LOCK_TTL,
+        )
     ]
     assert recorded == [
         {
