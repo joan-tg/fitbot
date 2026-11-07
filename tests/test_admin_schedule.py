@@ -1,6 +1,7 @@
 import io
-import json
 import sys
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -90,3 +91,52 @@ def test_schedule_rejects_unknown_booking(monkeypatch):
     response = request.post()
     assert request.status == 400
     assert response["error"] == "unknown"
+
+def test_production_schedule_does_not_require_preview_bypass(monkeypatch):
+    timezone = ZoneInfo("Europe/Madrid")
+    opens_at = (
+        datetime.now(timezone) + timedelta(hours=1)
+    ).replace(tzinfo=None).isoformat(timespec="seconds")
+    booking = {
+        "date": "2099-01-01",
+        "opens_at": opens_at,
+        "time": "18:15",
+        "name": "Strength Conditioning",
+    }
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("QSTASH_TOKEN", "qstash-test")
+    monkeypatch.setenv("FITBOT_WEBHOOK_URL", "https://fitbot.example.com/api/book")
+    monkeypatch.delenv("VERCEL_AUTOMATION_BYPASS_SECRET", raising=False)
+    monkeypatch.setattr(
+        schedule_api,
+        "load_config",
+        lambda path: {"timezone": "Europe/Madrid", "bookings": [booking]},
+    )
+
+    class FakeResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"messageId": "qstash-message-id"}
+
+    published = {}
+
+    def fake_post(url, **kwargs):
+        published["url"] = url
+        published.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(schedule_api.requests, "post", fake_post)
+
+    result = schedule_api._schedule_booking(booking)
+
+    assert result["status"] == "scheduled"
+    assert result["execution_mode"] == "determined_when_webhook_runs"
+    assert published["url"].endswith("/https://fitbot.example.com/api/book")
+    assert (
+        "Upstash-Forward-x-vercel-protection-bypass"
+        not in published["headers"]
+    )
