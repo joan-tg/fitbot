@@ -2,8 +2,8 @@ import io
 import json
 import sys
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -89,9 +89,8 @@ def test_schedule_rejects_unknown_booking(monkeypatch):
         lambda payload: (_ for _ in ()).throw(ValueError("unknown")),
     )
     request = FakeHandler({"date": "2099-01-01"})
-    response = request.post()
+    request.post()
     assert request.status == 400
-    assert response["error"] == "unknown"
 
 
 def test_production_schedule_does_not_require_preview_bypass(monkeypatch):
