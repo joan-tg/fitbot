@@ -24,15 +24,29 @@ class UpstashRedis:
     BOOKINGS_MAX_ITEMS = 500
     BOOKING_ID_PATTERN = re.compile(r"^[a-f0-9]{32}$")
     BOOKING_REQUIRED_FIELDS = (
-        "id", "person_id", "date", "time", "name", "activity_type",
-        "opens_at", "status", "created_at",
+        "id",
+        "person_id",
+        "date",
+        "time",
+        "name",
+        "activity_type",
+        "opens_at",
+        "status",
+        "created_at",
     )
-    BOOKING_METADATA_FIELDS = {"message_id", "scheduled_at", "cancelled_at", "error_code"}
+    BOOKING_METADATA_FIELDS = {
+        "message_id",
+        "scheduled_at",
+        "cancelled_at",
+        "error_code",
+    }
 
     @classmethod
     def booking_record_key(cls, booking_id):
         """Return the Redis key for a generated booking ID."""
-        if not isinstance(booking_id, str) or not cls.BOOKING_ID_PATTERN.fullmatch(booking_id):
+        if not isinstance(booking_id, str) or not cls.BOOKING_ID_PATTERN.fullmatch(
+            booking_id
+        ):
             raise ValueError("Invalid booking ID")
         return f"fitbot:bookings:{booking_id}"
 
@@ -40,7 +54,9 @@ class UpstashRedis:
         """Atomically persist a booking and add its ID to the bounded index."""
         if not isinstance(record, dict):
             raise ValueError("Booking record must be an object")
-        missing = [field for field in self.BOOKING_REQUIRED_FIELDS if not record.get(field)]
+        missing = [
+            field for field in self.BOOKING_REQUIRED_FIELDS if not record.get(field)
+        ]
         if missing:
             raise ValueError(f"Booking record is missing: {', '.join(missing)}")
         if record["person_id"] not in ("person_1", "person_2"):
@@ -67,11 +83,19 @@ class UpstashRedis:
             "redis.call('EXPIRE', KEYS[2], ARGV[3]); "
             "return 1"
         )
-        result = self._command([
-            "EVAL", script, 2, key, self.BOOKINGS_INDEX_KEY,
-            json.dumps(record, ensure_ascii=False, separators=(",", ":")),
-            score, self.BOOKINGS_TTL_SECONDS, record["id"],
-        ])
+        result = self._command(
+            [
+                "EVAL",
+                script,
+                2,
+                key,
+                self.BOOKINGS_INDEX_KEY,
+                json.dumps(record, ensure_ascii=False, separators=(",", ":")),
+                score,
+                self.BOOKINGS_TTL_SECONDS,
+                record["id"],
+            ]
+        )
         return result == 1
 
     def get_booking(self, booking_id):
@@ -87,12 +111,16 @@ class UpstashRedis:
             raise RedisUnavailable("Stored booking record is invalid")
         return record
 
-    def update_booking_status(self, booking_id, status, expected_statuses=None, metadata=None):
+    def update_booking_status(
+        self, booking_id, status, expected_statuses=None, metadata=None
+    ):
         """Atomically change status, optionally requiring an allowed prior state."""
         if not isinstance(status, str) or not status:
             raise ValueError("Booking status must be a non-empty string")
         metadata = metadata or {}
-        if not isinstance(metadata, dict) or not set(metadata).issubset(self.BOOKING_METADATA_FIELDS):
+        if not isinstance(metadata, dict) or not set(metadata).issubset(
+            self.BOOKING_METADATA_FIELDS
+        ):
             raise ValueError("Invalid booking metadata")
         expected_statuses = expected_statuses or []
         if not isinstance(expected_statuses, (list, tuple)) or any(
@@ -116,11 +144,18 @@ class UpstashRedis:
             "else redis.call('SET', KEYS[1], cjson.encode(booking), 'KEEPTTL') end; "
             "return {1, cjson.encode(booking)}"
         )
-        result = self._command([
-            "EVAL", script, 1, self.booking_record_key(booking_id), status,
-            datetime.now(timezone.utc).isoformat(), json.dumps(list(expected_statuses)),
-            json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
-        ])
+        result = self._command(
+            [
+                "EVAL",
+                script,
+                1,
+                self.booking_record_key(booking_id),
+                status,
+                datetime.now(timezone.utc).isoformat(),
+                json.dumps(list(expected_statuses)),
+                json.dumps(metadata, ensure_ascii=False, separators=(",", ":")),
+            ]
+        )
         if not isinstance(result, list) or len(result) != 2:
             raise RedisUnavailable("Unexpected booking update response")
         if result[0] == 0:
@@ -135,7 +170,9 @@ class UpstashRedis:
     def list_bookings(self, limit=100):
         """Return recent booking records, newest created first."""
         count = max(1, min(int(limit), self.BOOKINGS_MAX_ITEMS))
-        booking_ids = self._command(["ZREVRANGE", self.BOOKINGS_INDEX_KEY, 0, count - 1]) or []
+        booking_ids = (
+            self._command(["ZREVRANGE", self.BOOKINGS_INDEX_KEY, 0, count - 1]) or []
+        )
         if not booking_ids:
             return []
         keys = [self.booking_record_key(booking_id) for booking_id in booking_ids]
