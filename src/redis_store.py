@@ -140,7 +140,8 @@ class UpstashRedis:
             "local metadata = cjson.decode(ARGV[4]); "
             "for key, value in pairs(metadata) do booking[key] = value end; "
             "local ttl = redis.call('TTL', KEYS[1]); "
-            "if ttl > 0 then redis.call('SET', KEYS[1], cjson.encode(booking), 'EX', ttl) "
+            "if ttl > 0 then "
+            "redis.call('SET', KEYS[1], cjson.encode(booking), 'EX', ttl) "
             "else redis.call('SET', KEYS[1], cjson.encode(booking), 'KEEPTTL') end; "
             "return {1, cjson.encode(booking)}"
         )
