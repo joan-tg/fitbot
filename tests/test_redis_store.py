@@ -329,7 +329,9 @@ def test_create_booking_idempotent_stores_request_fingerprint_atomically():
     fingerprint = hashlib.sha256(
         json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
     ).hexdigest()
-    stored_request = json.dumps({"booking_id": "c" * 32, "fingerprint": fingerprint})
+    stored_request = json.dumps(
+        {"booking_id": "c" * 32, "fingerprint": fingerprint}
+    )
     session = FakeSession([[1, stored_request]])
     redis = UpstashRedis(
         url="https://example.upstash.io",
