@@ -227,9 +227,7 @@ def _create_booking(payload, idempotency_key):
         raise RuntimeError("Vercel Preview bypass is not configured")
 
     redis = UpstashRedis()
-    created, booking_id = redis.create_booking_idempotent(
-        booking, idempotency_key
-    )
+    created, booking_id = redis.create_booking_idempotent(booking, idempotency_key)
     stored = booking if created else redis.get_booking(booking_id)
     if stored is None:
         raise RedisUnavailable("Idempotent booking record is unavailable")
