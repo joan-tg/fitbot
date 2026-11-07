@@ -258,9 +258,7 @@ class handler(BaseHTTPRequestHandler):
                 # exactly one delayed retry, and only while the booking window
                 # still has enough time. A second lock response is terminal.
                 try:
-                    retry_count = int(
-                        self.headers.get("Upstash-Retried", "0")
-                    )
+                    retry_count = int(self.headers.get("Upstash-Retried", "0"))
                 except (TypeError, ValueError):
                     retry_count = 1
                 opens_at = parse_local_datetime(booking["opens_at"], timezone)
