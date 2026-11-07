@@ -7,6 +7,7 @@ import os
 import re
 import sys
 import uuid
+from urllib.parse import parse_qs, urlsplit
 from datetime import date, datetime, time, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -303,7 +304,56 @@ class handler(BaseHTTPRequestHandler):
             return _respond(self, 503, {"error": "Booking scheduling unavailable"})
 
     def do_GET(self):
-        return _respond(self, 405, {"error": "Method not allowed"})
+        if not _authorized(self):
+            return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
+            return _respond(
+                self,
+                403,
+                {"error": "Vercel Preview or Production environment only"},
+            )
+
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        if set(query) - {"limit"} or len(query.get("limit", [])) > 1:
+            return _respond(self, 400, {"error": "Only one limit parameter is supported"})
+        raw_limit = query.get("limit", ["50"])[0]
+        try:
+            limit = int(raw_limit)
+        except (TypeError, ValueError):
+            return _respond(self, 400, {"error": "limit must be an integer"})
+        if not 1 <= limit <= 100:
+            return _respond(self, 400, {"error": "limit must be between 1 and 100"})
+
+        try:
+            records = UpstashRedis().list_bookings(limit=limit)
+            fields = (
+                "id",
+                "person_id",
+                "date",
+                "time",
+                "name",
+                "activity_type",
+                "status",
+                "created_at",
+                "updated_at",
+                "opens_at",
+                "message_id",
+                "scheduled_at",
+                "error_code",
+                "cancelled_at",
+            )
+            bookings = [
+                {field: record[field] for field in fields if field in record}
+                for record in records
+            ]
+            return _respond(
+                self,
+                200,
+                {"count": len(bookings), "bookings": bookings},
+            )
+        except RedisUnavailable:
+            logger.exception("Redis booking store unavailable during listing")
+            return _respond(self, 503, {"error": "Booking store unavailable"})
 
     def log_message(self, format, *args):
         logger.info("FitBot bookings request: " + format, *args)
