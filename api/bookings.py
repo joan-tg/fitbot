@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import sys
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from http.server import BaseHTTPRequestHandler
@@ -14,8 +15,6 @@ from zoneinfo import ZoneInfo
 import requests
 
 ROOT = Path(__file__).resolve().parents[1]
-import sys
-
 sys.path.insert(0, str(ROOT / "src"))
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 from scheduled import load_config  # noqa: E402
