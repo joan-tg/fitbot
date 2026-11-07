@@ -368,9 +368,10 @@ def test_create_booking_idempotent_returns_existing_booking_for_same_request():
         session=FakeSession([[0, existing]]),
     )
 
-    assert redis.create_booking_idempotent(
-        record, "client-request-0001"
-    ) == (False, record["id"])
+    assert redis.create_booking_idempotent(record, "client-request-0001") == (
+        False,
+        record["id"],
+    )
 
 
 def test_create_booking_idempotent_rejects_reused_key_for_different_request():
