@@ -67,11 +67,10 @@ def _configure(monkeypatch, book_api, booking, redis_class):
 def test_stale_dynamic_processing_is_marked_unconfirmed_without_retry(monkeypatch):
     import api.book as book_api
 
-    booking = _processing_booking(
-        datetime.now(timezone.utc) - timedelta(
-            seconds=book_api.PROCESSING_LOCK_TTL + 1
-        )
+    stale_at = datetime.now(timezone.utc) - timedelta(
+        seconds=book_api.PROCESSING_LOCK_TTL + 1
     )
+    booking = _processing_booking(stale_at)
     events = []
 
     class FakeRedis:
