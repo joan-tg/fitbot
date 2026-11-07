@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import requests
@@ -318,16 +319,25 @@ def test_booking_record_key_rejects_untrusted_identifiers():
 
 
 def test_create_booking_idempotent_stores_request_fingerprint_atomically():
-    session = FakeSession([[1, json.dumps({
-        "booking_id": "c" * 32,
-        "fingerprint": "fingerprint-value",
-    })]])
+    record = make_booking_record(id="c" * 32)
+    fingerprint_source = {
+        "person_id": record["person_id"],
+        "date": record["date"],
+        "time": record["time"],
+        "name": record["name"],
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    stored_request = json.dumps(
+        {"booking_id": "c" * 32, "fingerprint": fingerprint}
+    )
+    session = FakeSession([[1, stored_request]])
     redis = UpstashRedis(
         url="https://example.upstash.io",
         token="test-token",
         session=session,
     )
-    record = make_booking_record(id="c" * 32)
 
     created, booking_id = redis.create_booking_idempotent(
         record, "client-request-0001"
@@ -347,8 +357,6 @@ def test_create_booking_idempotent_returns_existing_booking_for_same_request():
     fingerprint_source = {
         field: record[field] for field in ("person_id", "date", "time", "name")
     }
-    import hashlib
-
     fingerprint = hashlib.sha256(
         json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
     ).hexdigest()
