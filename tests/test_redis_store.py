@@ -406,6 +406,4 @@ def test_booking_lock_identity_is_scoped_by_member_for_dynamic_bookings():
     second = dict(BOOKING, person_id="person_2")
 
     assert UpstashRedis.booking_key(first) != UpstashRedis.booking_key(second)
-    assert UpstashRedis.booking_key(BOOKING) == UpstashRedis.booking_key(
-        dict(BOOKING)
-    )
+    assert UpstashRedis.booking_key(BOOKING) == UpstashRedis.booking_key(dict(BOOKING))
