@@ -93,6 +93,238 @@ def _is_booking_due(booking, timezone, now, window_minutes):
 
 
 class handler(BaseHTTPRequestHandler):
+    def _handle_dynamic_booking(self, payload, config):
+        booking_id = payload.get("booking_id")
+        if not isinstance(booking_id, str):
+            return _response(self, 400, {"error": "booking_id is required"})
+
+        redis = UpstashRedis()
+        booking = redis.get_booking(booking_id)
+        if booking is None:
+            return _response(self, 404, {"error": "Booking not found"})
+
+        status = booking.get("status")
+        if status == "cancelled":
+            return _response(self, 200, {"status": "cancelled_ignored"})
+        if status != "scheduled":
+            return _response(
+                self,
+                200,
+                {"status": "duplicate_ignored", "booking_id": booking_id},
+            )
+
+        timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
+        now = datetime.now(timezone)
+        window_minutes = int(config.get("window_minutes", 30))
+        if not _is_booking_due(booking, timezone, now, window_minutes):
+            return _response(
+                self,
+                409,
+                {
+                    "status": "outside_window",
+                    "booking_id": booking_id,
+                    "opens_at": booking["opens_at"],
+                    "window_minutes": window_minutes,
+                },
+            )
+
+        dry_run = os.environ.get("DRY_RUN", "true").lower() != "false"
+        # The lock includes person_id, so two independent accounts may book the
+        # same class/time without suppressing each other's reservations.
+        lock_token = redis.acquire(
+            booking, dry_run=dry_run, ttl_seconds=PROCESSING_LOCK_TTL
+        )
+        if not lock_token:
+            return _response(
+                self,
+                200,
+                {"status": "duplicate_ignored", "booking_id": booking_id},
+            )
+
+        claimed = redis.update_booking_status(
+            booking_id, "processing", expected_statuses=["scheduled"]
+        )
+        if claimed is None:
+            redis.release(booking, lock_token, dry_run=dry_run)
+            current = redis.get_booking(booking_id)
+            if current and current.get("status") == "cancelled":
+                return _response(self, 200, {"status": "cancelled_ignored"})
+            return _response(
+                self,
+                200,
+                {"status": "duplicate_ignored", "booking_id": booking_id},
+            )
+
+        def save_history(outcome):
+            try:
+                redis.record_booking_result(
+                    {
+                        "booking_id": booking_id,
+                        "person_id": booking["person_id"],
+                        "date": booking["date"],
+                        "time": booking["time"],
+                        "class": booking["name"],
+                        "status": outcome,
+                        "dry_run": dry_run,
+                    }
+                )
+            except RedisUnavailable:
+                logger.exception("Could not save dynamic booking history")
+
+        def set_status(outcome, error_code=None):
+            metadata = {"error_code": error_code} if error_code else None
+            redis.update_booking_status(
+                booking_id,
+                outcome,
+                expected_statuses=["processing"],
+                metadata=metadata,
+            )
+
+        run_config = dict(config)
+        run_config["bookings"] = [booking]
+        run_config["dry_run"] = dry_run
+        try:
+            result = run(run_config, now=now)
+        except IncorrectCredentials:
+            outcome = "incorrect_credentials"
+            set_status("booking_failed", outcome)
+            redis.complete(
+                booking,
+                lock_token,
+                outcome,
+                dry_run=dry_run,
+                ttl_seconds=AUTH_FAILURE_LOCK_TTL,
+            )
+            save_history(outcome)
+            logger.error("AimHarder rejected credentials for a configured member")
+            return _response(
+                self,
+                489,
+                {
+                    "status": outcome,
+                    "booking_id": booking_id,
+                    "person_id": booking["person_id"],
+                    "dry_run": dry_run,
+                },
+                headers={"Upstash-NonRetryable-Error": "true"},
+            )
+        except TooManyWrongAttempts:
+            try:
+                retry_count = int(self.headers.get("Upstash-Retried", "0"))
+            except (TypeError, ValueError):
+                retry_count = 1
+            opens_at = parse_local_datetime(booking["opens_at"], timezone)
+            remaining = timedelta(minutes=window_minutes) - (
+                datetime.now(timezone) - opens_at
+            )
+            if retry_count == 0 and remaining > timedelta(
+                seconds=AUTH_RETRY_DELAY_SECONDS
+            ):
+                redis.release(booking, lock_token, dry_run=dry_run)
+                redis.update_booking_status(
+                    booking_id,
+                    "scheduled",
+                    expected_statuses=["processing"],
+                )
+                save_history("too_many_wrong_attempts_retry_scheduled")
+                return _response(
+                    self,
+                    503,
+                    {
+                        "status": "too_many_wrong_attempts_retry_scheduled",
+                        "booking_id": booking_id,
+                    },
+                    headers={"Retry-After": str(AUTH_RETRY_DELAY_SECONDS)},
+                )
+            outcome = "too_many_wrong_attempts"
+            set_status("booking_failed", outcome)
+            redis.complete(
+                booking,
+                lock_token,
+                outcome,
+                dry_run=dry_run,
+                ttl_seconds=AUTH_FAILURE_LOCK_TTL,
+            )
+            save_history(outcome)
+            return _response(
+                self,
+                489,
+                {"status": outcome, "booking_id": booking_id},
+                headers={"Upstash-NonRetryable-Error": "true"},
+            )
+        except AimHarderUnavailable:
+            redis.release(booking, lock_token, dry_run=dry_run)
+            redis.update_booking_status(
+                booking_id, "scheduled", expected_statuses=["processing"]
+            )
+            logger.warning("AimHarder unavailable before booking; retry is safe")
+            return _response(
+                self, 503, {"error": "AimHarder unavailable before booking"}
+            )
+        except Exception:
+            if dry_run:
+                redis.release(booking, lock_token, dry_run=True)
+                redis.update_booking_status(
+                    booking_id, "scheduled", expected_statuses=["processing"]
+                )
+            else:
+                set_status("outcome_unconfirmed", "unexpected_execution_error")
+                redis.complete(
+                    booking,
+                    lock_token,
+                    "outcome_unconfirmed",
+                    dry_run=False,
+                    ttl_seconds=LIVE_LOCK_TTL,
+                )
+            raise
+
+        outcome = result.get("outcomes", [{}])[0].get("status", result["status"])
+        if outcome == "booking_unconfirmed":
+            outcome = "outcome_unconfirmed"
+        elif outcome == "class_not_found":
+            outcome = "booking_failed"
+
+        set_status(outcome, outcome if outcome == "booking_failed" else None)
+        if dry_run:
+            redis.complete(
+                booking, lock_token, outcome, dry_run=True, ttl_seconds=60
+            )
+        elif outcome in ("booking_confirmed", "already_booked"):
+            redis.complete(
+                booking,
+                lock_token,
+                outcome,
+                dry_run=False,
+                ttl_seconds=LIVE_LOCK_TTL,
+            )
+        elif outcome == "booking_failed":
+            redis.release(booking, lock_token, dry_run=False)
+        else:
+            set_status("outcome_unconfirmed", "unrecognized_execution_result")
+            redis.complete(
+                booking,
+                lock_token,
+                "outcome_unconfirmed",
+                dry_run=False,
+                ttl_seconds=LIVE_LOCK_TTL,
+            )
+            outcome = "outcome_unconfirmed"
+
+        save_history(outcome)
+        return _response(
+            self,
+            200,
+            {
+                "status": outcome,
+                "booking_id": booking_id,
+                "person_id": booking["person_id"],
+                "date": booking["date"],
+                "time": booking["time"],
+                "class": booking["name"],
+                "dry_run": dry_run,
+            },
+        )
+
     def do_POST(self):
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
@@ -172,6 +404,10 @@ class handler(BaseHTTPRequestHandler):
                 )
 
             config = load_config(ROOT / "reservas.json")
+            if isinstance(payload, dict) and "booking_id" in payload:
+                return self._handle_dynamic_booking(payload, config)
+
+            # Backward-compatible path for legacy static reservations.
             booking = _find_configured_booking(config, payload)
             if booking is None:
                 return _response(
