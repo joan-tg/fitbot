@@ -350,7 +350,7 @@ def test_create_booking_idempotent_stores_request_fingerprint_atomically():
     assert command[0] == "EVAL"
     assert "booking_requests:" in command[5]
     assert "ZADD" in command[1]
-    assert json.loads(command[6])["booking_id"] == "c" * 32
+    assert json.loads(command[8])["booking_id"] == "c" * 32
 
 
 def test_create_booking_idempotent_returns_existing_booking_for_same_request():
