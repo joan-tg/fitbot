@@ -315,7 +315,11 @@ class handler(BaseHTTPRequestHandler):
 
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
         if set(query) - {"limit"} or len(query.get("limit", [])) > 1:
-            return _respond(self, 400, {"error": "Only one limit parameter is supported"})
+            return _respond(
+                self,
+                400,
+                {"error": "Only one limit parameter is supported"},
+            )
         raw_limit = query.get("limit", ["50"])[0]
         try:
             limit = int(raw_limit)
