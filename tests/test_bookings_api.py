@@ -80,7 +80,7 @@ def test_build_booking_rejects_invalid_or_out_of_horizon_requests(payload):
 
 
 def test_build_booking_uses_elapsed_utc_hours_across_dst():
-    dst_now = datetime(2026, 3, 27, 12, 0, tzinfo=ZoneInfo("Europe/Madrid"))
+    dst_now = datetime(2026, 3, 27, 11, 0, tzinfo=ZoneInfo("Europe/Madrid"))
     payload = {
         "person_id": "person_2",
         "date": "2026-03-30",
@@ -156,11 +156,11 @@ def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypat
     record = {
         "id": "a" * 32,
         "person_id": "person_1",
-        "date": "2026-11-10",
+        "date": "2026-11-11",
         "time": "13:00",
         "name": "Strength Conditioning",
         "activity_type": "class",
-        "opens_at": "2026-11-07T13:00:00+01:00",
+        "opens_at": "2026-11-08T13:00:00+01:00",
         "status": "scheduled",
         "created_at": NOW.isoformat(),
         "message_id": "existing-message",
