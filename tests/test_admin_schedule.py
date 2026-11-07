@@ -92,6 +92,7 @@ def test_schedule_rejects_unknown_booking(monkeypatch):
     assert request.status == 400
     assert response["error"] == "unknown"
 
+
 def test_production_schedule_does_not_require_preview_bypass(monkeypatch):
     timezone = ZoneInfo("Europe/Madrid")
     opens_at = (
