@@ -95,9 +95,9 @@ def test_schedule_rejects_unknown_booking(monkeypatch):
 
 def test_production_schedule_does_not_require_preview_bypass(monkeypatch):
     timezone = ZoneInfo("Europe/Madrid")
-    opens_at = (
-        datetime.now(timezone) + timedelta(hours=1)
-    ).replace(tzinfo=None).isoformat(timespec="seconds")
+    opens_at = datetime.now(timezone) + timedelta(hours=1)
+    opens_at = opens_at.replace(tzinfo=None)
+    opens_at = opens_at.isoformat(timespec="seconds")
     booking = {
         "date": "2099-01-01",
         "opens_at": opens_at,
