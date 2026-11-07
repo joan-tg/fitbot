@@ -179,3 +179,133 @@ def test_list_booking_results_reads_and_decodes_json_records():
         0,
         9,
     ]
+
+
+def make_booking_record(**overrides):
+    record = {
+        "id": "a" * 32,
+        "person_id": "person_1",
+        "date": "2026-11-09",
+        "time": "18:15",
+        "name": "Strength Conditioning",
+        "activity_type": "class",
+        "opens_at": "2026-11-06T18:15:00+01:00",
+        "status": "pending_schedule",
+        "created_at": "2026-11-07T12:00:00+01:00",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_create_booking_atomically_stores_record_and_indexes_id():
+    session = FakeSession([1])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    assert redis.create_booking(make_booking_record()) is True
+    command = session.calls[0][1]["json"]
+    assert command[0] == "EVAL"
+    assert "SET' , KEYS[1]" not in command[1]  # script is kept compact
+    assert "ZADD" in command[1]
+    assert "ZREMRANGEBYRANK" in command[1]
+    assert command[3] == redis.booking_record_key("a" * 32)
+    assert command[4] == redis.BOOKINGS_INDEX_KEY
+    assert json.loads(command[5])["person_id"] == "person_1"
+    assert command[7] == redis.BOOKINGS_TTL_SECONDS
+    assert command[8] == "a" * 32
+
+
+def test_create_booking_rejects_invalid_person_and_duplicate_id():
+    session = FakeSession([0])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    with pytest.raises(ValueError, match="person_id"):
+        redis.create_booking(make_booking_record(person_id="person_3"))
+    assert redis.create_booking(make_booking_record()) is False
+
+
+def test_get_booking_reads_and_decodes_record():
+    record = make_booking_record()
+    session = FakeSession([json.dumps(record)])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    assert redis.get_booking("a" * 32) == record
+    assert session.calls[0][1]["json"] == ["GET", redis.booking_record_key("a" * 32)]
+
+
+def test_update_booking_status_uses_atomic_expected_state_guard():
+    updated = make_booking_record(status="scheduled", message_id="qstash-id")
+    session = FakeSession([[1, json.dumps(updated)]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    result = redis.update_booking_status(
+        "a" * 32,
+        "scheduled",
+        expected_statuses=["pending_schedule"],
+        metadata={"message_id": "qstash-id"},
+    )
+
+    assert result == updated
+    command = session.calls[0][1]["json"]
+    assert command[0] == "EVAL"
+    assert "status_conflict" in command[1]
+    assert "KEEPTTL" in command[1]
+    assert command[3] == redis.booking_record_key("a" * 32)
+    assert command[6] == '["pending_schedule"]'
+    assert json.loads(command[7]) == {"message_id": "qstash-id"}
+
+
+def test_update_booking_status_reports_conflict_and_missing_record():
+    session = FakeSession([[0, "status_conflict"], [0, "not_found"]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    assert redis.update_booking_status(
+        "a" * 32, "cancelled", expected_statuses=["scheduled"]
+    ) is None
+    with pytest.raises(KeyError, match="not found"):
+        redis.update_booking_status("b" * 32, "cancelled")
+
+
+def test_list_bookings_reads_index_and_skips_expired_records():
+    first = make_booking_record()
+    second = make_booking_record(id="b" * 32, person_id="person_2")
+    session = FakeSession([["a" * 32, "b" * 32], [json.dumps(first), None]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    assert redis.list_bookings(limit=10) == [first]
+    assert session.calls[0][1]["json"] == [
+        "ZREVRANGE", redis.BOOKINGS_INDEX_KEY, 0, 9
+    ]
+    assert session.calls[1][1]["json"] == [
+        "MGET",
+        redis.booking_record_key("a" * 32),
+        redis.booking_record_key("b" * 32),
+    ]
+
+
+def test_booking_record_key_rejects_untrusted_identifiers():
+    with pytest.raises(ValueError, match="booking ID"):
+        UpstashRedis.booking_record_key("../booking")
