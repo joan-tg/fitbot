@@ -455,7 +455,9 @@ def test_dynamic_booking_loads_redis_record_claims_and_records_dry_run(monkeypat
             events.append("lock")
             return "owner"
 
-        def update_booking_status(self, booking_id, status, expected_statuses=None, metadata=None):
+        def update_booking_status(
+            self, booking_id, status, expected_statuses=None, metadata=None
+        ):
             assert booking_id == booking["id"]
             assert stored["status"] in expected_statuses
             stored.update(metadata or {})
