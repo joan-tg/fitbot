@@ -35,15 +35,18 @@ logger = logging.getLogger("fitbot.vercel")
 INTEGRATION_TEST_NAME = "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
 LIVE_LOCK_TTL = 45 * 24 * 60 * 60
 AUTH_FAILURE_LOCK_TTL = 60 * 60
+AUTH_RETRY_DELAY_SECONDS = 60
 PROCESSING_LOCK_TTL = 5 * 60
 
 
-def _response(handler, status, payload):
+def _response(handler, status, payload, headers=None):
     body = json.dumps(payload).encode("utf-8")
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
     handler.send_header("Cache-Control", "no-store")
+    for name, value in (headers or {}).items():
+        handler.send_header(name, value)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -195,8 +198,11 @@ class handler(BaseHTTPRequestHandler):
             config["bookings"] = [booking]
             config["dry_run"] = dry_run
             redis = UpstashRedis()
-            lock_ttl = PROCESSING_LOCK_TTL if dry_run else LIVE_LOCK_TTL
-            lock_token = redis.acquire(booking, dry_run=dry_run, ttl_seconds=lock_ttl)
+            # Every invocation starts with a short processing lease. A confirmed
+            # or uncertain live outcome is promoted to the long safety lock below.
+            lock_token = redis.acquire(
+                booking, dry_run=dry_run, ttl_seconds=PROCESSING_LOCK_TTL
+            )
             if not lock_token:
                 return _response(
                     self,
@@ -211,15 +217,88 @@ class handler(BaseHTTPRequestHandler):
 
             try:
                 result = run(config, now=now)
-            except (IncorrectCredentials, TooManyWrongAttempts) as error:
-                # Authentication failures happen before any booking POST. Treat
-                # them as terminal for this delivery: retain a short deduplication
-                # lock and return 200 so QStash does not retry bad credentials.
-                outcome = (
-                    "incorrect_credentials"
-                    if isinstance(error, IncorrectCredentials)
-                    else "too_many_wrong_attempts"
+            except IncorrectCredentials:
+                # Bad credentials will not recover by retrying this message.
+                # Mark it non-retryable so QStash sends it to the DLQ for review.
+                outcome = "incorrect_credentials"
+                redis.complete(
+                    booking,
+                    lock_token,
+                    outcome,
+                    dry_run=dry_run,
+                    ttl_seconds=AUTH_FAILURE_LOCK_TTL,
                 )
+                try:
+                    redis.record_booking_result(
+                        {
+                            "date": booking["date"],
+                            "time": booking["time"],
+                            "class": booking["name"],
+                            "status": outcome,
+                            "dry_run": dry_run,
+                        }
+                    )
+                except RedisUnavailable:
+                    logger.exception("Could not save authentication failure history")
+                logger.error("AimHarder rejected the configured credentials")
+                return _response(
+                    self,
+                    489,
+                    {
+                        "status": outcome,
+                        "date": booking["date"],
+                        "time": booking["time"],
+                        "class": booking["name"],
+                        "dry_run": dry_run,
+                    },
+                    headers={"Upstash-NonRetryable-Error": "true"},
+                )
+            except TooManyWrongAttempts:
+                # AimHarder may be temporarily rate-limiting login attempts. Allow
+                # exactly one delayed retry, and only while the booking window
+                # still has enough time. A second lock response is terminal.
+                try:
+                    retry_count = int(self.headers.get("Upstash-Retried", "0"))
+                except (TypeError, ValueError):
+                    retry_count = 1
+                opens_at = parse_local_datetime(booking["opens_at"], timezone)
+                remaining = timedelta(minutes=window_minutes) - (now - opens_at)
+                can_retry = (
+                    retry_count == 0
+                    and remaining > timedelta(seconds=AUTH_RETRY_DELAY_SECONDS)
+                )
+                if can_retry:
+                    redis.release(booking, lock_token, dry_run=dry_run)
+                    outcome = "too_many_wrong_attempts_retry_scheduled"
+                    try:
+                        redis.record_booking_result(
+                            {
+                                "date": booking["date"],
+                                "time": booking["time"],
+                                "class": booking["name"],
+                                "status": outcome,
+                                "dry_run": dry_run,
+                            }
+                        )
+                    except RedisUnavailable:
+                        logger.exception("Could not save authentication retry history")
+                    logger.warning(
+                        "AimHarder temporarily blocked login; one retry scheduled"
+                    )
+                    return _response(
+                        self,
+                        503,
+                        {
+                            "status": outcome,
+                            "date": booking["date"],
+                            "time": booking["time"],
+                            "class": booking["name"],
+                            "dry_run": dry_run,
+                        },
+                        headers={"Retry-After": str(AUTH_RETRY_DELAY_SECONDS)},
+                    )
+
+                outcome = "too_many_wrong_attempts"
                 redis.complete(
                     booking,
                     lock_token,
@@ -240,12 +319,11 @@ class handler(BaseHTTPRequestHandler):
                 except RedisUnavailable:
                     logger.exception("Could not save authentication failure history")
                 logger.error(
-                    "AimHarder authentication failed before booking (%s)",
-                    outcome,
+                    "AimHarder login remains blocked after the single retry window"
                 )
                 return _response(
                     self,
-                    200,
+                    489,
                     {
                         "status": outcome,
                         "date": booking["date"],
@@ -253,6 +331,7 @@ class handler(BaseHTTPRequestHandler):
                         "class": booking["name"],
                         "dry_run": dry_run,
                     },
+                    headers={"Upstash-NonRetryable-Error": "true"},
                 )
             except AimHarderUnavailable:
                 # Login/classes failed before a booking POST was sent. It is safe
@@ -264,9 +343,18 @@ class handler(BaseHTTPRequestHandler):
                 )
             except Exception:
                 # An unexpected live-mode error may have happened after a booking
-                # POST. Retain the long lock rather than risk a duplicate.
+                # POST. Promote the short lease to a long safety lock rather than
+                # risk a duplicate. Dry-run can safely release its lock.
                 if dry_run:
                     redis.release(booking, lock_token, dry_run=True)
+                else:
+                    redis.complete(
+                        booking,
+                        lock_token,
+                        "outcome_unconfirmed",
+                        dry_run=False,
+                        ttl_seconds=LIVE_LOCK_TTL,
+                    )
                 raise
 
             outcome = result.get("outcomes", [{}])[0].get("status", result["status"])
