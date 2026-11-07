@@ -399,3 +399,13 @@ def test_create_booking_idempotent_rejects_invalid_key():
 
     with pytest.raises(ValueError, match="Idempotency-Key"):
         redis.create_booking_idempotent(make_booking_record(), "short")
+
+
+def test_booking_lock_identity_is_scoped_by_member_for_dynamic_bookings():
+    first = dict(BOOKING, person_id="person_1")
+    second = dict(BOOKING, person_id="person_2")
+
+    assert UpstashRedis.booking_key(first) != UpstashRedis.booking_key(second)
+    assert UpstashRedis.booking_key(BOOKING) == UpstashRedis.booking_key(
+        dict(BOOKING)
+    )
