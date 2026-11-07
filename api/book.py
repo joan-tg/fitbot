@@ -24,12 +24,17 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from scheduled import load_config, parse_local_datetime, run  # noqa: E402
-from exceptions import AimHarderUnavailable  # noqa: E402
+from exceptions import (  # noqa: E402
+    AimHarderUnavailable,
+    IncorrectCredentials,
+    TooManyWrongAttempts,
+)
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.vercel")
 INTEGRATION_TEST_NAME = "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
 LIVE_LOCK_TTL = 45 * 24 * 60 * 60
+AUTH_FAILURE_LOCK_TTL = 60 * 60
 PROCESSING_LOCK_TTL = 5 * 60
 
 
@@ -206,6 +211,49 @@ class handler(BaseHTTPRequestHandler):
 
             try:
                 result = run(config, now=now)
+            except (IncorrectCredentials, TooManyWrongAttempts) as error:
+                # Authentication failures happen before any booking POST. Treat
+                # them as terminal for this delivery: retain a short deduplication
+                # lock and return 200 so QStash does not retry bad credentials.
+                outcome = (
+                    "incorrect_credentials"
+                    if isinstance(error, IncorrectCredentials)
+                    else "too_many_wrong_attempts"
+                )
+                redis.complete(
+                    booking,
+                    lock_token,
+                    outcome,
+                    dry_run=dry_run,
+                    ttl_seconds=AUTH_FAILURE_LOCK_TTL,
+                )
+                try:
+                    redis.record_booking_result(
+                        {
+                            "date": booking["date"],
+                            "time": booking["time"],
+                            "class": booking["name"],
+                            "status": outcome,
+                            "dry_run": dry_run,
+                        }
+                    )
+                except RedisUnavailable:
+                    logger.exception("Could not save authentication failure history")
+                logger.error(
+                    "AimHarder authentication failed before booking (%s)",
+                    outcome,
+                )
+                return _response(
+                    self,
+                    200,
+                    {
+                        "status": outcome,
+                        "date": booking["date"],
+                        "time": booking["time"],
+                        "class": booking["name"],
+                        "dry_run": dry_run,
+                    },
+                )
             except AimHarderUnavailable:
                 # Login/classes failed before a booking POST was sent. It is safe
                 # to release the lock and let QStash retry this delivery.
