@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 from datetime import datetime
@@ -91,7 +92,11 @@ def test_build_booking_uses_elapsed_utc_hours_across_dst():
 
     opening = datetime.fromisoformat(booking["opens_at"])
     class_start = datetime.fromisoformat("2026-03-30T13:00:00+02:00")
-    assert (class_start.astimezone(ZoneInfo("UTC")) - opening.astimezone(ZoneInfo("UTC"))).total_seconds() == 72 * 3600
+    elapsed = (
+        class_start.astimezone(ZoneInfo("UTC"))
+        - opening.astimezone(ZoneInfo("UTC"))
+    ).total_seconds()
+    assert elapsed == 72 * 3600
 
 
 def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
@@ -104,7 +109,9 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
             stored.update(record)
             return True, record["id"]
 
-        def update_booking_status(self, booking_id, status, expected_statuses, metadata=None):
+        def update_booking_status(
+            self, booking_id, status, expected_statuses, metadata=None
+        ):
             assert booking_id == stored["id"]
             if status == "scheduling":
                 assert expected_statuses == ["pending_schedule", "schedule_failed"]
@@ -138,8 +145,9 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(bookings_api.requests, "post", fake_post)
 
+    payload = dict(VALID_PAYLOAD, date="2026-11-11")
     result, published = bookings_api._create_booking(
-        VALID_PAYLOAD, "client-request-0001"
+        payload, "client-request-0001"
     )
 
     assert published is True
@@ -149,7 +157,10 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
     assert calls["headers"]["Upstash-Not-Before"] == str(
         int(datetime.fromisoformat(stored["opens_at"]).timestamp())
     )
-    assert calls["headers"]["Upstash-Forward-x-vercel-protection-bypass"] == "preview-bypass"
+    assert (
+        calls["headers"]["Upstash-Forward-x-vercel-protection-bypass"]
+        == "preview-bypass"
+    )
 
 
 def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypatch):
@@ -185,8 +196,9 @@ def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypat
         lambda *args, **kwargs: pytest.fail("duplicate must not publish"),
     )
 
+    payload = dict(VALID_PAYLOAD, date="2026-11-11")
     result, published = bookings_api._create_booking(
-        VALID_PAYLOAD, "client-request-0001"
+        payload, "client-request-0001"
     )
 
     assert published is False
@@ -195,8 +207,12 @@ def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypat
 
 
 class FakeHandler:
-    def __init__(self, payload, token="admin-test", idempotency_key="client-request-0001"):
-        import io
+    def __init__(
+        self,
+        payload,
+        token="admin-test",
+        idempotency_key="client-request-0001",
+    ):
 
         raw = json.dumps(payload).encode()
         self.headers = {
