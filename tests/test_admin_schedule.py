@@ -75,7 +75,7 @@ def test_schedule_allows_live_mode_in_preview(monkeypatch):
         lambda payload: {"status": "scheduled"},
     )
     request = FakeHandler({"date": "2099-01-01"})
-    response = request.post()
+    request.post()
     assert request.status == 201
 
 
