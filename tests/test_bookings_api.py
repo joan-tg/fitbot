@@ -18,7 +18,13 @@ def config():
         "box_name": "studiocrossfit",
         "box_id": 9507,
         "window_minutes": 30,
-        "booking_policy": {"opening_lead_hours": 72},
+        "booking_policy": {
+            "opening_lead_hours": 72,
+            "horizon": {
+                "type": "calendar_month_plus_days",
+                "next_month_days": 3,
+            },
+        },
         "members": {
             "person_1": {"label": "Persona 1"},
             "person_2": {"label": "Persona 2"},
