@@ -245,3 +245,80 @@ def test_booking_is_not_due_after_window(monkeypatch):
         now=datetime(2026, 11, 1, 17, 45, 1, tzinfo=TZ),
     )
     assert result == {"status": "not_due", "processed": 0}
+
+
+@pytest.mark.parametrize(
+    ("person_id", "email_env", "password_env", "email", "password"),
+    [
+        (
+            "person_1",
+            "AIMHARDER_PERSON_1_EMAIL",
+            "AIMHARDER_PERSON_1_PASSWORD",
+            "first@example.com",
+            "first-password",
+        ),
+        (
+            "person_2",
+            "AIMHARDER_PERSON_2_EMAIL",
+            "AIMHARDER_PERSON_2_PASSWORD",
+            "second@example.com",
+            "second-password",
+        ),
+    ],
+)
+def test_dynamic_booking_resolves_the_selected_members_credentials(
+    monkeypatch, person_id, email_env, password_env, email, password
+):
+    booking = config()["bookings"][0] | {"person_id": person_id}
+    dynamic_config = config()
+    dynamic_config["bookings"] = [booking]
+    dynamic_config["members"] = {
+        person_id: {
+            "aimharder_credentials": {
+                "email_env": email_env,
+                "password_env": password_env,
+            }
+        }
+    }
+    monkeypatch.setenv(email_env, email)
+    monkeypatch.setenv(password_env, password)
+    monkeypatch.setenv("DRY_RUN", "true")
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = scheduled.run(
+        dynamic_config,
+        now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+        client_class=factory,
+    )
+
+    assert clients[0].kwargs["email"] == email
+    assert clients[0].kwargs["password"] == password
+    assert result["outcomes"][0]["status"] == "dry_run"
+
+
+def test_dynamic_booking_fails_closed_when_member_credentials_are_missing(monkeypatch):
+    booking = config()["bookings"][0] | {"person_id": "person_2"}
+    dynamic_config = config()
+    dynamic_config["bookings"] = [booking]
+    dynamic_config["members"] = {
+        "person_2": {
+            "aimharder_credentials": {
+                "email_env": "AIMHARDER_PERSON_2_EMAIL",
+                "password_env": "AIMHARDER_PERSON_2_PASSWORD",
+            }
+        }
+    }
+    monkeypatch.delenv("AIMHARDER_PERSON_2_EMAIL", raising=False)
+    monkeypatch.delenv("AIMHARDER_PERSON_2_PASSWORD", raising=False)
+
+    with pytest.raises(RuntimeError, match="unavailable for this member"):
+        scheduled.run(
+            dynamic_config,
+            now=datetime(2026, 11, 1, 17, 20, tzinfo=TZ),
+            client_class=FakeClient,
+        )
