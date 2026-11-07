@@ -5,5 +5,73 @@
   "family_id": null,
   "dry_run": true,
   "window_minutes": 30,
+  "booking_policy": {
+    "opening_lead_hours": 72,
+    "horizon": {
+      "type": "calendar_month_plus_days",
+      "next_month_days": 3
+    }
+  },
+  "members": {
+    "person_1": {
+      "label": "Persona 1",
+      "aimharder_credentials": {
+        "email_env": "AIMHARDER_PERSON_1_EMAIL",
+        "password_env": "AIMHARDER_PERSON_1_PASSWORD"
+      },
+      "monthly_quotas": {
+        "classes": 17,
+        "open_box": 4
+      }
+    },
+    "person_2": {
+      "label": "Persona 2",
+      "aimharder_credentials": {
+        "email_env": "AIMHARDER_PERSON_2_EMAIL",
+        "password_env": "AIMHARDER_PERSON_2_PASSWORD"
+      },
+      "monthly_quotas": {
+        "classes": 13,
+        "open_box": 4
+      }
+    }
+  },
+  "activities": {
+    "class": [
+      "Weightlifting",
+      "Strength Conditioning",
+      "CrossFit",
+      "Fuerza",
+      "Metcon",
+      "Gymnastic",
+      "Handstand & Flex"
+    ],
+    "open_box": [
+      "Open Box"
+    ]
+  },
+  "quota_accounting": {
+    "period": "activity_calendar_month",
+    "count_statuses": [
+      "scheduled",
+      "processing",
+      "booking_confirmed",
+      "already_booked"
+    ],
+    "exclude_statuses": [
+      "cancelled",
+      "booking_failed",
+      "schedule_failed",
+      "dry_run"
+    ],
+    "uncertain_statuses": [
+      "outcome_unconfirmed"
+    ],
+    "enforcement": "informational_only",
+    "warnings": [
+      "quota_reached",
+      "quota_exceeded"
+    ]
+  },
   "bookings": []
 }
