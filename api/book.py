@@ -34,7 +34,7 @@ from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 logger = logging.getLogger("fitbot.vercel")
 INTEGRATION_TEST_NAME = "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
 LIVE_LOCK_TTL = 45 * 24 * 60 * 60
-AUTH_FAILURE_LOCK_TTL = 60 * 60
+AUTH_FAILURE_LOCK_TTL = 5 * 60
 AUTH_RETRY_DELAY_SECONDS = 60
 PROCESSING_LOCK_TTL = 5 * 60
 
