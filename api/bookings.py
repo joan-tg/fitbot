@@ -108,11 +108,8 @@ def _build_booking(payload, config, now=None, booking_id=None):
     naive_start = datetime.combine(target_date, target_time)
     start_fold_0 = naive_start.replace(tzinfo=local_tz, fold=0)
     start_fold_1 = naive_start.replace(tzinfo=local_tz, fold=1)
-    roundtrip = (
-        start_fold_0.astimezone(timezone.utc)
-        .astimezone(local_tz)
-        .replace(tzinfo=None)
-    )
+    roundtrip_aware = start_fold_0.astimezone(timezone.utc).astimezone(local_tz)
+    roundtrip = roundtrip_aware.replace(tzinfo=None)
     if roundtrip != naive_start:
         raise ValueError("Class time does not exist in the configured timezone")
     if start_fold_0.utcoffset() != start_fold_1.utcoffset():
