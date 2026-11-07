@@ -286,9 +286,7 @@ class handler(BaseHTTPRequestHandler):
 
         set_status(outcome, outcome if outcome == "booking_failed" else None)
         if dry_run:
-            redis.complete(
-                booking, lock_token, outcome, dry_run=True, ttl_seconds=60
-            )
+            redis.complete(booking, lock_token, outcome, dry_run=True, ttl_seconds=60)
         elif outcome in ("booking_confirmed", "already_booked"):
             redis.complete(
                 booking,
