@@ -243,9 +243,7 @@ def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
             assert dry_run is False
             return "owner-token"
 
-        def complete(
-            self, booking_data, token, status, dry_run=False, ttl_seconds=60
-        ):
+        def complete(self, booking_data, token, status, dry_run=False, ttl_seconds=60):
             completed.append((booking_data, token, status, dry_run, ttl_seconds))
             return True
 
