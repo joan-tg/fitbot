@@ -279,9 +279,12 @@ def test_update_booking_status_reports_conflict_and_missing_record():
         session=session,
     )
 
-    assert redis.update_booking_status(
-        "a" * 32, "cancelled", expected_statuses=["scheduled"]
-    ) is None
+    conflict = redis.update_booking_status(
+        "a" * 32,
+        "cancelled",
+        expected_statuses=["scheduled"],
+    )
+    assert conflict is None
     with pytest.raises(KeyError, match="not found"):
         redis.update_booking_status("b" * 32, "cancelled")
 
@@ -297,7 +300,10 @@ def test_list_bookings_reads_index_and_skips_expired_records():
 
     assert redis.list_bookings(limit=10) == [first]
     assert session.calls[0][1]["json"] == [
-        "ZREVRANGE", redis.BOOKINGS_INDEX_KEY, 0, 9
+        "ZREVRANGE",
+        redis.BOOKINGS_INDEX_KEY,
+        0,
+        9,
     ]
     assert session.calls[1][1]["json"] == [
         "MGET",
