@@ -201,7 +201,6 @@ def test_only_explicit_false_enables_live_booking(monkeypatch):
     assert len(clients[0].book_calls) == 1
 
 
-
 def test_force_dry_run_overrides_explicit_live_environment(monkeypatch):
     monkeypatch.setenv("EMAIL", "test@example.com")
     monkeypatch.setenv("PASSWORD", "not-a-real-password")
@@ -222,6 +221,7 @@ def test_force_dry_run_overrides_explicit_live_environment(monkeypatch):
 
     assert result["outcomes"][0]["status"] == "dry_run"
     assert clients[0].book_calls == []
+
 
 def test_rejects_duplicate_booking_entries():
     duplicate_config = config()
