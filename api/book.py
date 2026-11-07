@@ -128,7 +128,11 @@ class handler(BaseHTTPRequestHandler):
                 },
             )
 
-        dry_run = os.environ.get("DRY_RUN", "true").lower() != "false"
+        # Dynamic bookings in Preview are always simulations. This is a code-level
+        # safety boundary: a mistaken DRY_RUN=false setting must never create a
+        # real AimHarder reservation from a Preview deployment.
+        is_preview = os.environ.get("VERCEL_ENV") == "preview"
+        dry_run = is_preview or os.environ.get("DRY_RUN", "true").lower() != "false"
         # The lock includes person_id, so two independent accounts may book the
         # same class/time without suppressing each other's reservations.
         lock_token = redis.acquire(
