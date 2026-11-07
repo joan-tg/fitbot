@@ -194,9 +194,7 @@ def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypat
     )
 
     payload = dict(VALID_PAYLOAD, date="2026-11-11")
-    result, published = bookings_api._create_booking(
-        payload, "client-request-0001"
-    )
+    result, published = bookings_api._create_booking(payload, "client-request-0001")
 
     assert published is False
     assert result["status"] == "scheduled"
