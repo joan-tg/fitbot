@@ -69,7 +69,9 @@ def test_stale_dynamic_processing_is_marked_unconfirmed_without_retry(monkeypatc
 
     booking = _processing_booking(
         datetime.now(timezone.utc)
-        - timedelta(seconds=book_api.PROCESSING_LOCK_TTL + 1)
+        - timedelta(
+            seconds=book_api.PROCESSING_LOCK_TTL + 1
+        )
     )
     events = []
 
