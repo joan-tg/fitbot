@@ -145,9 +145,7 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
     monkeypatch.setattr(bookings_api.requests, "post", fake_post)
 
     payload = dict(VALID_PAYLOAD, date="2026-11-11")
-    result, published = bookings_api._create_booking(
-        payload, "client-request-0001"
-    )
+    result, published = bookings_api._create_booking(payload, "client-request-0001")
 
     assert published is True
     assert result["status"] == "scheduled"
