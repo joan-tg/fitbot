@@ -315,3 +315,78 @@ def test_list_bookings_reads_index_and_skips_expired_records():
 def test_booking_record_key_rejects_untrusted_identifiers():
     with pytest.raises(ValueError, match="booking ID"):
         UpstashRedis.booking_record_key("../booking")
+
+
+def test_create_booking_idempotent_stores_request_fingerprint_atomically():
+    session = FakeSession([[1, json.dumps({
+        "booking_id": "c" * 32,
+        "fingerprint": "fingerprint-value",
+    })]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+    record = make_booking_record(id="c" * 32)
+
+    created, booking_id = redis.create_booking_idempotent(
+        record, "client-request-0001"
+    )
+
+    assert created is True
+    assert booking_id == "c" * 32
+    command = session.calls[0][1]["json"]
+    assert command[0] == "EVAL"
+    assert "booking_requests:" in command[5]
+    assert "ZADD" in command[1]
+    assert json.loads(command[6])["booking_id"] == "c" * 32
+
+
+def test_create_booking_idempotent_returns_existing_booking_for_same_request():
+    record = make_booking_record()
+    fingerprint_source = {
+        field: record[field] for field in ("person_id", "date", "time", "name")
+    }
+    import hashlib
+
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    existing = json.dumps({"booking_id": record["id"], "fingerprint": fingerprint})
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=FakeSession([[0, existing]]),
+    )
+
+    assert redis.create_booking_idempotent(
+        record, "client-request-0001"
+    ) == (False, record["id"])
+
+
+def test_create_booking_idempotent_rejects_reused_key_for_different_request():
+    existing = json.dumps({
+        "booking_id": "a" * 32,
+        "fingerprint": "different-fingerprint",
+    })
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=FakeSession([[0, existing]]),
+    )
+
+    with pytest.raises(ValueError, match="different booking"):
+        redis.create_booking_idempotent(
+            make_booking_record(), "client-request-0001"
+        )
+
+
+def test_create_booking_idempotent_rejects_invalid_key():
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=FakeSession([]),
+    )
+
+    with pytest.raises(ValueError, match="Idempotency-Key"):
+        redis.create_booking_idempotent(make_booking_record(), "short")
