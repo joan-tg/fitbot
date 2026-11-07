@@ -342,9 +342,7 @@ def test_create_booking_idempotent_stores_request_fingerprint_atomically():
         session=session,
     )
 
-    created, booking_id = redis.create_booking_idempotent(
-        record, "client-request-0001"
-    )
+    created, booking_id = redis.create_booking_idempotent(record, "client-request-0001")
 
     assert created is True
     assert booking_id == "c" * 32
