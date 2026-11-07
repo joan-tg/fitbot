@@ -264,11 +264,11 @@ def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
     )
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
 
-    exception = (
-        IncorrectCredentials()
-        if auth_error == "incorrect"
-        else TooManyWrongAttempts()
-    )
+    exception_type = {
+        "incorrect": IncorrectCredentials,
+        "locked": TooManyWrongAttempts,
+    }[auth_error]
+    exception = exception_type()
 
     def fail_login(*args, **kwargs):
         raise exception
