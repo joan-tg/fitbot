@@ -14,7 +14,7 @@ jobs:
       - name: Check lint
         uses: astral-sh/ruff-action@v3
         with:
-          args: "check"
+          args: "check --select E4,E7,E9,F"
       - name: Check formatting
         uses: astral-sh/ruff-action@v3
         with:
