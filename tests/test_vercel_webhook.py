@@ -397,3 +397,150 @@ def test_unexpected_live_error_promotes_processing_lock_to_long_safety_lock(
     assert request.status == 500
     assert response["error"] == "Booking processing failed"
     assert completed == [("outcome_unconfirmed", False, book_api.LIVE_LOCK_TTL)]
+
+
+def _dynamic_booking(status="scheduled", person_id="person_1"):
+    timezone = ZoneInfo("Europe/Madrid")
+    now = datetime.now(timezone)
+    return {
+        "id": "a" * 32,
+        "person_id": person_id,
+        "date": now.date().isoformat(),
+        "time": "10:00",
+        "name": "Strength Conditioning",
+        "activity_type": "class",
+        "opens_at": (now - timedelta(seconds=30)).isoformat(timespec="seconds"),
+        "status": status,
+        "created_at": now.isoformat(),
+    }
+
+
+def _dynamic_config():
+    return {
+        "timezone": "Europe/Madrid",
+        "window_minutes": 30,
+        "members": {
+            "person_1": {
+                "aimharder_credentials": {
+                    "email_env": "AIMHARDER_PERSON_1_EMAIL",
+                    "password_env": "AIMHARDER_PERSON_1_PASSWORD",
+                }
+            },
+            "person_2": {
+                "aimharder_credentials": {
+                    "email_env": "AIMHARDER_PERSON_2_EMAIL",
+                    "password_env": "AIMHARDER_PERSON_2_PASSWORD",
+                }
+            },
+        },
+    }
+
+
+def test_dynamic_booking_loads_redis_record_claims_and_records_dry_run(monkeypatch):
+    import api.book as book_api
+
+    booking = _dynamic_booking()
+    events = []
+    stored = dict(booking)
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            assert booking_id == booking["id"]
+            return dict(stored)
+
+        def acquire(self, record, dry_run, ttl_seconds):
+            assert record["person_id"] == "person_1"
+            assert dry_run is True
+            assert ttl_seconds == book_api.PROCESSING_LOCK_TTL
+            events.append("lock")
+            return "owner"
+
+        def update_booking_status(self, booking_id, status, expected_statuses=None, metadata=None):
+            assert booking_id == booking["id"]
+            assert stored["status"] in expected_statuses
+            stored.update(metadata or {})
+            stored["status"] = status
+            events.append(status)
+            return dict(stored)
+
+        def complete(self, record, token, status, dry_run=False, ttl_seconds=60):
+            events.append("lock_complete")
+            return True
+
+        def release(self, *args, **kwargs):
+            pytest.fail("successful dry-run should complete its lock")
+
+        def record_booking_result(self, record):
+            events.append(("history", record["status"], record["person_id"]))
+
+    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+
+    def fake_run(config, now=None):
+        assert config["bookings"] == [booking]
+        assert config["bookings"][0]["person_id"] == "person_1"
+        assert config["dry_run"] is True
+        return {"status": "completed", "outcomes": [{"status": "dry_run"}]}
+
+    monkeypatch.setattr(book_api, "run", fake_run)
+    request = FakeHandler(json.dumps({"booking_id": booking["id"]}).encode())
+    response = request.post()
+
+    assert request.status == 200
+    assert response["status"] == "dry_run"
+    assert response["person_id"] == "person_1"
+    assert stored["status"] == "dry_run"
+    assert events == [
+        "lock",
+        "processing",
+        "dry_run",
+        "lock_complete",
+        ("history", "dry_run", "person_1"),
+    ]
+
+
+def test_dynamic_cancelled_booking_never_contacts_aimharder(monkeypatch):
+    import api.book as book_api
+
+    booking = _dynamic_booking(status="cancelled")
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(booking)
+
+        def acquire(self, *args, **kwargs):
+            pytest.fail("cancelled booking must not acquire a lock")
+
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        book_api, "run", lambda *args, **kwargs: pytest.fail("must not run")
+    )
+
+    request = FakeHandler(json.dumps({"booking_id": booking["id"]}).encode())
+    response = request.post()
+
+    assert request.status == 200
+    assert response["status"] == "cancelled_ignored"
+
+
+def test_dynamic_booking_with_unknown_id_returns_404(monkeypatch):
+    import api.book as book_api
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return None
+
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+
+    request = FakeHandler(json.dumps({"booking_id": "b" * 32}).encode())
+    response = request.post()
+
+    assert request.status == 404
+    assert response["error"] == "Booking not found"
