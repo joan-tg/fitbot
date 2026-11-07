@@ -387,9 +387,7 @@ def test_create_booking_idempotent_rejects_reused_key_for_different_request():
     )
 
     with pytest.raises(ValueError, match="different booking"):
-        redis.create_booking_idempotent(
-            make_booking_record(), "client-request-0001"
-        )
+        redis.create_booking_idempotent(make_booking_record(), "client-request-0001")
 
 
 def test_create_booking_idempotent_rejects_invalid_key():
