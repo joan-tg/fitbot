@@ -40,14 +40,41 @@ def test_admin_schedule_rejects_missing_or_wrong_token(monkeypatch):
     assert request.status == 401
 
 
-def test_schedule_requires_preview_and_dry_run(monkeypatch):
+def test_schedule_rejects_local_environment(monkeypatch):
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
-    monkeypatch.setenv("VERCEL_ENV", "production")
-    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("VERCEL_ENV", "development")
     request = FakeHandler({})
     response = request.post()
     assert request.status == 403
-    assert response["error"] == "Preview environment only"
+    assert response["error"] == "Vercel Preview or Production environment only"
+
+
+def test_schedule_allows_production_with_admin_token(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setattr(
+        schedule_api,
+        "_schedule_booking",
+        lambda payload: {"status": "scheduled"},
+    )
+    request = FakeHandler({"date": "2099-01-01"})
+    response = request.post()
+    assert request.status == 201
+    assert response["status"] == "scheduled"
+
+
+def test_schedule_allows_live_mode_in_preview(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setattr(
+        schedule_api,
+        "_schedule_booking",
+        lambda payload: {"status": "scheduled"},
+    )
+    request = FakeHandler({"date": "2099-01-01"})
+    response = request.post()
+    assert request.status == 201
 
 
 def test_schedule_rejects_unknown_booking(monkeypatch):
