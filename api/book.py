@@ -263,13 +263,9 @@ class handler(BaseHTTPRequestHandler):
                     retry_count = 1
                 opens_at = parse_local_datetime(booking["opens_at"], timezone)
                 retry_now = datetime.now(timezone)
-                remaining = timedelta(minutes=window_minutes) - (
-                    retry_now - opens_at
-                )
+                remaining = timedelta(minutes=window_minutes) - (retry_now - opens_at)
                 retry_available = retry_count == 0
-                window_has_time = remaining > timedelta(
-                    seconds=AUTH_RETRY_DELAY_SECONDS
-                )
+                window_has_time = remaining > timedelta(seconds=AUTH_RETRY_DELAY_SECONDS)
                 if retry_available and window_has_time:
                     redis.release(booking, lock_token, dry_run=dry_run)
                     outcome = "too_many_wrong_attempts_retry_scheduled"
