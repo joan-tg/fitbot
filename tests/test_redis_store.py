@@ -167,7 +167,12 @@ def test_list_booking_results_reads_and_decodes_json_records():
 
     results = redis.list_booking_results(limit=10)
 
-    assert results == [{"status": "class_not_found", "class": "Strength Conditioning"}]
+    assert results == [
+        {
+            "status": "class_not_found",
+            "class": "Strength Conditioning",
+        }
+    ]
     assert session.calls[0][1]["json"] == [
         "LRANGE",
         redis.RESULTS_KEY,
