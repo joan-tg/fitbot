@@ -43,7 +43,9 @@ class handler(BaseHTTPRequestHandler):
             query = parse_qs(urlsplit(self.path).query)
             limit = int(query.get("limit", ["50"])[0])
             if limit < 1 or limit > 100:
-                return _response(self, 400, {"error": "limit must be between 1 and 100"})
+                return _response(
+                    self, 400, {"error": "limit must be between 1 and 100"}
+                )
             results = UpstashRedis().list_booking_results(limit=limit)
             return _response(self, 200, {"count": len(results), "results": results})
         except ValueError:
