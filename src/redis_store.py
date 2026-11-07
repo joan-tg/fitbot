@@ -106,8 +106,10 @@ class UpstashRedis:
             raise ValueError("Invalid Idempotency-Key")
 
         fingerprint_source = {
-            field: record.get(field)
-            for field in ("person_id", "date", "time", "name")
+            "person_id": record.get("person_id"),
+            "date": record.get("date"),
+            "time": record.get("time"),
+            "name": record.get("name"),
         }
         fingerprint = hashlib.sha256(
             json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
