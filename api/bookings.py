@@ -156,6 +156,7 @@ def _publish_booking(booking, redis):
         booking["id"],
         "scheduling",
         expected_statuses=list(CLAIMABLE_STATUSES),
+        metadata={"error_code": None},
     )
     if claimed is None:
         latest = redis.get_booking(booking["id"])
