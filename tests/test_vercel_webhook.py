@@ -212,3 +212,83 @@ def test_pre_booking_aimharder_outage_releases_live_lock_for_retry(monkeypatch):
     assert request.status == 503
     assert response["error"] == "AimHarder unavailable before booking"
     assert released == [(booking, "owner-token", False)]
+
+@pytest.mark.parametrize(
+    ("auth_error", "expected_status"),
+    [
+        ("incorrect", "incorrect_credentials"),
+        ("locked", "too_many_wrong_attempts"),
+    ],
+)
+def test_authentication_failure_is_terminal_and_keeps_only_short_dedup_lock(
+    monkeypatch, auth_error, expected_status
+):
+    import api.book as book_api
+    from exceptions import IncorrectCredentials, TooManyWrongAttempts
+
+    booking = {
+        "date": "2026-11-06",
+        "opens_at": "2026-11-03T10:00:00",
+        "time": "10:00",
+        "name": "Weightlifting",
+    }
+    payload = json.dumps(booking).encode()
+    completed = []
+    recorded = []
+
+    class FakeRedis:
+        def acquire(self, booking_data, dry_run, ttl_seconds):
+            assert booking_data == booking
+            assert dry_run is False
+            return "owner-token"
+
+        def complete(
+            self, booking_data, token, status, dry_run=False, ttl_seconds=60
+        ):
+            completed.append((booking_data, token, status, dry_run, ttl_seconds))
+            return True
+
+        def record_booking_result(self, record):
+            recorded.append(record)
+
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
+    monkeypatch.setattr(
+        book_api,
+        "load_config",
+        lambda path: {
+            "timezone": "Europe/Madrid",
+            "window_minutes": 30,
+            "bookings": [booking],
+        },
+    )
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+
+    exception = (
+        IncorrectCredentials()
+        if auth_error == "incorrect"
+        else TooManyWrongAttempts()
+    )
+
+    def fail_login(*args, **kwargs):
+        raise exception
+
+    monkeypatch.setattr(book_api, "run", fail_login)
+    request = FakeHandler(payload)
+    response = request.post()
+
+    assert request.status == 200
+    assert response["status"] == expected_status
+    assert completed == [
+        (booking, "owner-token", expected_status, False, book_api.AUTH_FAILURE_LOCK_TTL)
+    ]
+    assert recorded == [
+        {
+            "date": booking["date"],
+            "time": booking["time"],
+            "class": booking["name"],
+            "status": expected_status,
+            "dry_run": False,
+        }
+    ]
