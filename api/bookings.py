@@ -66,7 +66,11 @@ def _build_booking(payload, config, now=None, booking_id=None):
 
     person_id = payload.get("person_id")
     members = config.get("members", {})
-    if person_id not in members or person_id not in ("person_1", "person_2"):
+    if (
+        not isinstance(person_id, str)
+        or person_id not in members
+        or person_id not in ("person_1", "person_2")
+    ):
         raise ValueError("Unknown person_id")
 
     raw_date = payload.get("date")
@@ -87,8 +91,16 @@ def _build_booking(payload, config, now=None, booking_id=None):
     except ValueError as error:
         raise ValueError("Invalid class date or time") from error
 
+    policy = config.get("booking_policy", {})
+    horizon = policy.get("horizon", {})
+    if horizon.get("type") != "calendar_month_plus_days":
+        raise ValueError("Unsupported booking horizon policy")
+    next_month_days = horizon.get("next_month_days")
+    if not isinstance(next_month_days, int) or next_month_days < 0:
+        raise ValueError("Invalid next-month booking horizon")
+
     first_next_month = _next_month_first_day(now.date())
-    last_allowed_date = first_next_month + timedelta(days=2)
+    last_allowed_date = first_next_month + timedelta(days=next_month_days - 1)
     if target_date < now.date() or target_date > last_allowed_date:
         raise ValueError(
             "Class date must be in the current calendar month or the first "
@@ -115,7 +127,6 @@ def _build_booking(payload, config, now=None, booking_id=None):
     if start_fold_0.utcoffset() != start_fold_1.utcoffset():
         raise ValueError("Ambiguous class time in the configured timezone")
 
-    policy = config.get("booking_policy", {})
     lead_hours = policy.get("opening_lead_hours")
     if lead_hours != 72:
         raise ValueError("Booking policy must use a 72-hour opening lead")
