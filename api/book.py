@@ -403,7 +403,7 @@ class handler(BaseHTTPRequestHandler):
 
             config = load_config(ROOT / "reservas.json")
             if isinstance(payload, dict) and "booking_id" in payload:
-                return self._handle_dynamic_booking(payload, config)
+                return handler._handle_dynamic_booking(self, payload, config)
 
             # Backward-compatible path for legacy static reservations.
             booking = _find_configured_booking(config, payload)
