@@ -84,9 +84,7 @@ def _schedule_booking(booking):
     # Production can use the same bypass when protection is enabled, but
     # does not require it when the production domain is publicly reachable.
     if vercel_bypass_secret:
-        headers["Upstash-Forward-x-vercel-protection-bypass"] = (
-            vercel_bypass_secret
-        )
+        headers["Upstash-Forward-x-vercel-protection-bypass"] = vercel_bypass_secret
     response = requests.post(
         f"https://qstash.upstash.io/v2/publish/{destination}",
         json=matches[0],
