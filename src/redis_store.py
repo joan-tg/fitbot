@@ -98,6 +98,75 @@ class UpstashRedis:
         )
         return result == 1
 
+    def create_booking_idempotent(self, record, idempotency_key):
+        """Create once per client key; reject reuse with a different booking."""
+        if not isinstance(idempotency_key, str) or not re.fullmatch(
+            r"[A-Za-z0-9._:-]{16,128}", idempotency_key
+        ):
+            raise ValueError("Invalid Idempotency-Key")
+
+        fingerprint_source = {
+            field: record.get(field)
+            for field in ("person_id", "date", "time", "name")
+        }
+        fingerprint = hashlib.sha256(
+            json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        request_key = (
+            "fitbot:booking_requests:"
+            + hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+        )
+        booking_key = self.booking_record_key(record.get("id"))
+        created_at = datetime.fromisoformat(record["created_at"])
+        if created_at.tzinfo is None:
+            raise ValueError("created_at must include a timezone")
+
+        request_record = json.dumps(
+            {"booking_id": record["id"], "fingerprint": fingerprint},
+            separators=(",", ":"),
+        )
+        script = (
+            "local existing = redis.call('GET', KEYS[3]); "
+            "if existing then return {0, existing} end; "
+            "if redis.call('EXISTS', KEYS[1]) == 1 then return {-1, ''} end; "
+            "redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[4]); "
+            "redis.call('ZADD', KEYS[2], ARGV[2], ARGV[5]); "
+            "redis.call('ZREMRANGEBYRANK', KEYS[2], 0, -"
+            + str(self.BOOKINGS_MAX_ITEMS + 1)
+            + "); "
+            "redis.call('EXPIRE', KEYS[2], ARGV[4]); "
+            "redis.call('SET', KEYS[3], ARGV[3], 'EX', ARGV[4]); "
+            "return {1, ARGV[3]}"
+        )
+        result = self._command(
+            [
+                "EVAL",
+                script,
+                3,
+                booking_key,
+                self.BOOKINGS_INDEX_KEY,
+                request_key,
+                json.dumps(record, ensure_ascii=False, separators=(",", ":")),
+                created_at.timestamp(),
+                request_record,
+                self.BOOKINGS_TTL_SECONDS,
+                record["id"],
+            ]
+        )
+        if not isinstance(result, list) or len(result) != 2:
+            raise RedisUnavailable("Unexpected idempotent booking response")
+        if result[0] == -1:
+            raise RedisUnavailable("Booking ID collision")
+        try:
+            stored_request = json.loads(result[1])
+        except (TypeError, json.JSONDecodeError) as error:
+            raise RedisUnavailable("Stored idempotency record is invalid") from error
+        if stored_request.get("fingerprint") != fingerprint:
+            raise ValueError(
+                "Idempotency-Key was already used for a different booking"
+            )
+        return result[0] == 1, stored_request["booking_id"]
+
     def get_booking(self, booking_id):
         """Fetch one booking record by its opaque ID."""
         value = self._command(["GET", self.booking_record_key(booking_id)])
