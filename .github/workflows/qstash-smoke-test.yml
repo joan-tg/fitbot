@@ -94,3 +94,5 @@ jobs:
           echo "First result: ${FIRST:-<missing>}"
           echo "Second result: ${SECOND:-<missing>}"
           exit 1
+
+# Manual validation trigger: harmless comment update to run the Preview smoke test.
