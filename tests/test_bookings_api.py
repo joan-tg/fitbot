@@ -92,10 +92,9 @@ def test_build_booking_uses_elapsed_utc_hours_across_dst():
 
     opening = datetime.fromisoformat(booking["opens_at"])
     class_start = datetime.fromisoformat("2026-03-30T13:00:00+02:00")
-    elapsed = (
-        class_start.astimezone(ZoneInfo("UTC"))
-        - opening.astimezone(ZoneInfo("UTC"))
-    ).total_seconds()
+    class_start_utc = class_start.astimezone(ZoneInfo("UTC"))
+    opening_utc = opening.astimezone(ZoneInfo("UTC"))
+    elapsed = (class_start_utc - opening_utc).total_seconds()
     assert elapsed == 72 * 3600
 
 
