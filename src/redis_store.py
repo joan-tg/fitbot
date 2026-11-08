@@ -207,7 +207,7 @@ class UpstashRedis:
             "if not matched then return {0, 'status_conflict'} end end; "
             "booking.status = ARGV[1]; booking.updated_at = ARGV[2]; "
             "local metadata = cjson.decode(ARGV[4]); "
-            "for key, value in pairs(metadata) do booking[key] = value end; "
+            "for key, value in pairs(metadata) do if value == cjson.null then booking[key] = nil else booking[key] = value end end; "
             "local ttl = redis.call('TTL', KEYS[1]); "
             "if ttl > 0 then "
             "redis.call('SET', KEYS[1], cjson.encode(booking), 'EX', ttl) "
