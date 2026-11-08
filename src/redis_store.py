@@ -354,6 +354,38 @@ class UpstashRedis:
             ]
         )
 
+    def delete_confirmed_booking_results(self, recorded_at):
+        """Delete only exact, live-confirmed history entries selected by timestamp."""
+        if (
+            not isinstance(recorded_at, (list, tuple))
+            or not 1 <= len(recorded_at) <= 10
+            or any(not isinstance(value, str) or not value for value in recorded_at)
+        ):
+            raise ValueError("recorded_at must contain between 1 and 10 timestamps")
+
+        script = (
+            "local targets = cjson.decode(ARGV[1]); "
+            "local items = redis.call('LRANGE', KEYS[1], 0, -1); "
+            "local removed = 0; "
+            "for _, raw in ipairs(items) do "
+            "local ok, item = pcall(cjson.decode, raw); "
+            "if ok and item.status == 'booking_confirmed' and item.dry_run == false then "
+            "for _, timestamp in ipairs(targets) do "
+            "if item.recorded_at == timestamp then "
+            "removed = removed + redis.call('LREM', KEYS[1], 1, raw); "
+            "break; end; end; end; end; "
+            "return removed"
+        )
+        return self._command(
+            [
+                "EVAL",
+                script,
+                1,
+                self.RESULTS_KEY,
+                json.dumps(list(recorded_at), separators=(",", ":")),
+            ]
+        )
+
     def list_booking_results(self, limit=50):
         """Return the newest stored booking results, newest first."""
         count = max(1, min(int(limit), self.RESULTS_MAX_ITEMS))
