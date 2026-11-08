@@ -63,6 +63,31 @@ def test_build_booking_calculates_exact_72_hour_opening():
     assert booking["id"]
 
 
+def test_build_booking_accepts_exactly_seven_day_qstash_delay():
+    payload = {
+        "person_id": "person_1",
+        "date": "2026-11-17",
+        "time": "12:00",
+        "name": "Strength Conditioning",
+    }
+    booking = bookings_api._build_booking(payload, config(), now=NOW)
+
+    opening = datetime.fromisoformat(booking["opens_at"])
+    assert opening - NOW == __import__("datetime").timedelta(days=7)
+
+
+def test_build_booking_rejects_qstash_delay_over_seven_days():
+    payload = {
+        "person_id": "person_1",
+        "date": "2026-11-18",
+        "time": "12:00",
+        "name": "Strength Conditioning",
+    }
+
+    with pytest.raises(ValueError, match="7-day free-plan limit"):
+        bookings_api._build_booking(payload, config(), now=NOW)
+
+
 def test_build_booking_classifies_open_box_separately():
     payload = dict(VALID_PAYLOAD, name="Open Box")
     booking = bookings_api._build_booking(payload, config(), now=NOW)
