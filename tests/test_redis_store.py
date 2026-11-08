@@ -184,7 +184,7 @@ def test_list_booking_results_reads_and_decodes_json_records():
     ]
 
 
-def test_delete_confirmed_booking_results_matches_only_exact_live_confirmed_timestamps():
+def test_delete_confirmed_booking_results_matches_only_exact_live_confirmed():
     session = FakeSession([2])
     redis = UpstashRedis(
         url="https://example.upstash.io",
