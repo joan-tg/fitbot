@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 from http.server import BaseHTTPRequestHandler
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -52,6 +53,41 @@ class handler(BaseHTTPRequestHandler):
             return _response(self, 400, {"error": "Invalid limit"})
         except RedisUnavailable:
             logger.exception("Could not read booking result history")
+            return _response(self, 503, {"error": "Result history unavailable"})
+
+    def do_DELETE(self):
+        if not _authorized(self):
+            return _response(self, 401, {"error": "Unauthorized"})
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length <= 0 or content_length > 4096:
+                return _response(self, 413, {"error": "Invalid request body size"})
+            payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            if not isinstance(payload, dict) or set(payload) != {"recorded_at"}:
+                return _response(
+                    self, 400, {"error": "Body must contain only recorded_at"}
+                )
+            timestamps = payload["recorded_at"]
+            if (
+                not isinstance(timestamps, list)
+                or not 1 <= len(timestamps) <= 10
+                or any(not isinstance(value, str) for value in timestamps)
+            ):
+                return _response(
+                    self, 400, {"error": "recorded_at must be a list of 1 to 10 timestamps"}
+                )
+            for value in timestamps:
+                parsed = datetime.fromisoformat(value)
+                if parsed.tzinfo is None:
+                    return _response(
+                        self, 400, {"error": "Timestamps must include a timezone"}
+                    )
+            deleted = UpstashRedis().delete_confirmed_booking_results(timestamps)
+            return _response(self, 200, {"deleted": deleted})
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            return _response(self, 400, {"error": "Invalid deletion request"})
+        except RedisUnavailable:
+            logger.exception("Could not delete booking result history")
             return _response(self, 503, {"error": "Result history unavailable"})
 
     def do_POST(self):
