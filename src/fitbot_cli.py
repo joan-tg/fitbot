@@ -1,5 +1,7 @@
 import argparse
+import getpass
 import json
+import os
 from datetime import UTC, datetime, timedelta
 
 from client import AimHarderClient
@@ -26,16 +28,51 @@ def get_booking_goal_time(day: datetime, booking_goals):
 
 
 def get_class_to_book(classes: list[dict], target_time: str, class_name: str):
-    if not classes or len(classes) == 0:
+    """Return one unambiguous class matching the requested time and name."""
+    if not classes:
         raise BoxClosed(MESSAGE_BOX_IS_CLOSED)
 
-    classes = list(filter(lambda _class: target_time in _class["timeid"], classes))
-    _class = list(filter(lambda _class: class_name in _class["className"], classes))
-    if len(_class) == 0:
+    # AimHarder time IDs commonly include a duration suffix, e.g. "1715_60".
+    # Compare the time component, not a substring that could match another time.
+    time_classes = [
+        item
+        for item in classes
+        if isinstance(item, dict)
+        and str(item.get("timeid", "")).split("_", 1)[0] == str(target_time)
+    ]
+
+    requested_name = str(class_name).strip().casefold()
+    exact_matches = [
+        item
+        for item in time_classes
+        if isinstance(item.get("className"), str)
+        and item["className"].strip().casefold() == requested_name
+    ]
+
+    if len(exact_matches) == 1:
+        return exact_matches[0]
+    if len(exact_matches) > 1:
         raise NoBookingGoal(
-            f"No class with the text `{class_name}` in its name at time `{target_time}`"
+            f"Ambiguous class: multiple exact matches for "
+            f"`{class_name}` at `{target_time}`."
         )
-    return _class[0]
+
+    partial_matches = [
+        item
+        for item in time_classes
+        if isinstance(item.get("className"), str)
+        and requested_name in item["className"].casefold()
+    ]
+    if len(partial_matches) == 1:
+        return partial_matches[0]
+    if len(partial_matches) > 1:
+        raise NoBookingGoal(
+            f"Ambiguous class: multiple partial matches for "
+            f"`{class_name}` at `{target_time}`."
+        )
+    raise NoBookingGoal(
+        f"No class with the text `{class_name}` in its name at time `{target_time}`"
+    )
 
 
 def main(
@@ -72,23 +109,22 @@ def main(
 
 if __name__ == "__main__":
     """
-    python src/main.py
+    PASSWORD may be supplied through the environment; otherwise the CLI prompts
+    securely for it.
+
+    python src/fitbot_cli.py
      --email your.email@mail.com
-     --password 1234
      --box-name lahuellacrossfit
      --box-id 3984
      --booking-goal '{"0":{"time": "1815", "name": "Provenza"}}'
      --family-id 123456
-     --proxy socks5://89.58.45.94:34472
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--email", required=True, type=str)
-    parser.add_argument("--password", required=True, type=str)
     parser.add_argument("--booking-goals", required=True, type=json.loads)
     parser.add_argument("--box-name", required=True, type=str)
     parser.add_argument("--box-id", required=True, type=int)
     parser.add_argument("--days-in-advance", required=True, type=int, default=3)
-    parser.add_argument("--proxy", required=False, type=str, default=None)
     parser.add_argument(
         "--family-id",
         required=False,
@@ -97,5 +133,11 @@ if __name__ == "__main__":
         help="ID of the family member (optional)",
     )
     args = parser.parse_args()
-    input = {key: value for key, value in args.__dict__.items() if value != ""}
-    main(**input)
+    arguments = {key: value for key, value in args.__dict__.items() if value != ""}
+    password = (
+        os.environ.get("PASSWORD")
+        or os.environ.get("password")
+        or getpass.getpass("AimHarder password: ")
+    )
+    arguments["proxy"] = os.environ.get("PROXY") or os.environ.get("proxy") or None
+    main(password=password, **arguments)

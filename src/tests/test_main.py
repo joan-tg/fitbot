@@ -8,7 +8,7 @@ from freezegun import freeze_time
 
 from constants import LOGIN_ENDPOINT, book_endpoint
 from exceptions import BoxClosed, NoBookingGoal
-from main import get_booking_goal_time, get_class_to_book, main
+from fitbot_cli import get_booking_goal_time, get_class_to_book, main
 
 
 class TestGetBookingGoalTime:
@@ -53,7 +53,7 @@ class TestGetClassToBook:
                 ],
                 "1700",
                 "foo",
-                does_not_raise(),
+                pytest.raises(NoBookingGoal, match="multiple exact matches"),
             ),
             (
                 [{"id": 123, "timeid": "1100_60", "className": "foo"}],
@@ -92,16 +92,28 @@ class TestMain:
             patch("requests.Session.get") as m_get,
         ):
             m_post.side_effect = self.mock_request_post
-            m_get.return_value.json.return_value = {
-                "bookings": [
-                    {
-                        "id": 123,
-                        "timeid": "1700_60",
-                        "className": "Provenza",
-                        "bookState": None,
-                    }
-                ]
-            }
+            m_get.return_value.json.side_effect = [
+                {
+                    "bookings": [
+                        {
+                            "id": 123,
+                            "timeid": "1700_60",
+                            "className": "Provenza",
+                            "bookState": None,
+                        }
+                    ]
+                },
+                {
+                    "bookings": [
+                        {
+                            "id": 123,
+                            "timeid": "1700_60",
+                            "className": "Provenza",
+                            "bookState": 1,
+                        }
+                    ]
+                },
+            ]
             main(
                 email="foo",
                 password="bar",

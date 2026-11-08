@@ -4,3 +4,7 @@ __pycache__
 
 .env
 .env.secrets
+# Ignore local environment variants while keeping safe templates tracked.
+.env.*
+!.env.example
+!.env.secrets.example

@@ -5,30 +5,73 @@
   "family_id": null,
   "dry_run": true,
   "window_minutes": 30,
-  "bookings": [
-    {
-      "date": "2026-11-04",
-      "opens_at": "2026-11-01T17:15:00",
-      "time": "17:15",
-      "name": "Weightlifting"
-    },
-    {
-      "date": "2026-11-04",
-      "opens_at": "2026-11-01T18:15:00",
-      "time": "18:15",
-      "name": "Strength & Conditioning"
-    },
-    {
-      "date": "2026-11-05",
-      "opens_at": "2026-11-02T08:00:00",
-      "time": "08:00",
-      "name": "Strength & Conditioning"
-    },
-    {
-      "date": "2026-11-06",
-      "opens_at": "2026-11-03T08:00:00",
-      "time": "08:00",
-      "name": "Strength & Conditioning"
+  "booking_policy": {
+    "opening_lead_hours": 72,
+    "horizon": {
+      "type": "calendar_month_plus_days",
+      "next_month_days": 3
     }
-  ]
+  },
+  "members": {
+    "person_1": {
+      "label": "Persona 1",
+      "aimharder_credentials": {
+        "email_env": "AIMHARDER_PERSON_1_EMAIL",
+        "password_env": "AIMHARDER_PERSON_1_PASSWORD"
+      },
+      "monthly_quotas": {
+        "classes": 17,
+        "open_box": 4
+      }
+    },
+    "person_2": {
+      "label": "Persona 2",
+      "aimharder_credentials": {
+        "email_env": "AIMHARDER_PERSON_2_EMAIL",
+        "password_env": "AIMHARDER_PERSON_2_PASSWORD"
+      },
+      "monthly_quotas": {
+        "classes": 13,
+        "open_box": 4
+      }
+    }
+  },
+  "activities": {
+    "class": [
+      "Weightlifting",
+      "Strength Conditioning",
+      "CrossFit",
+      "Fuerza",
+      "Metcon",
+      "Gymnastic",
+      "Handstand & Flex"
+    ],
+    "open_box": [
+      "Open Box"
+    ]
+  },
+  "quota_accounting": {
+    "period": "activity_calendar_month",
+    "count_statuses": [
+      "scheduled",
+      "processing",
+      "booking_confirmed",
+      "already_booked"
+    ],
+    "exclude_statuses": [
+      "cancelled",
+      "booking_failed",
+      "schedule_failed",
+      "dry_run"
+    ],
+    "uncertain_statuses": [
+      "outcome_unconfirmed"
+    ],
+    "enforcement": "informational_only",
+    "warnings": [
+      "quota_reached",
+      "quota_exceeded"
+    ]
+  },
+  "bookings": []
 }

@@ -1,6 +1,7 @@
 from datetime import datetime
 from http import HTTPStatus
 
+import requests
 from requests import Session
 
 from constants import (
@@ -11,9 +12,10 @@ from constants import (
 from exceptions import (
     MESSAGE_BOOKING_FAILED_NO_CREDIT,
     MESSAGE_BOOKING_FAILED_PENDING_PAYMENT,
-    MESSAGE_BOOKING_FAILED_UNKNOWN,
     MESSAGE_TOO_SOON_TO_BOOK,
+    AimHarderUnavailable,
     BookingFailed,
+    BookingUnconfirmed,
     IncorrectCredentials,
     TooManyWrongAttempts,
 )
@@ -21,6 +23,8 @@ from logger import logger
 
 
 class AimHarderClient:
+    REQUEST_TIMEOUT = 10
+
     def __init__(
         self,
         email: str,
@@ -36,53 +40,119 @@ class AimHarderClient:
     @staticmethod
     def _login(email: str, password: str, proxy: str | None = None) -> Session:
         session = Session()
-        session.proxies = {"https": proxy}
-        logger.info(f"Using proxy: {'yes' if proxy else 'no'}")
-        response = session.post(
-            LOGIN_ENDPOINT,
-            data=f'{{"username":"{email}","password":"{password}","iniframe":0}}',
-        )
+        session.proxies = {"https": proxy} if proxy else {}
+        logger.info("Using proxy: %s", "yes" if proxy else "no")
+        try:
+            response = session.post(
+                LOGIN_ENDPOINT,
+                json={"username": email, "password": password, "iniframe": 0},
+                timeout=AimHarderClient.REQUEST_TIMEOUT,
+            )
+        except requests.RequestException as error:
+            raise AimHarderUnavailable("AimHarder login request failed") from error
+
+        if response.status_code >= HTTPStatus.INTERNAL_SERVER_ERROR:
+            raise AimHarderUnavailable(
+                f"AimHarder login returned HTTP {response.status_code}"
+            )
         if response.status_code != HTTPStatus.OK:
-            message = response.json().get("error", {}).get("message", "")
+            try:
+                message = response.json().get("error", {}).get("message", "")
+            except (ValueError, AttributeError):
+                message = ""
             if TooManyWrongAttempts.key_phrase in message:
                 raise TooManyWrongAttempts
-            elif IncorrectCredentials.key_phrase in message:
+            if IncorrectCredentials.key_phrase in message:
                 raise IncorrectCredentials
             response.raise_for_status()
         logger.info("Logged successfully")
         return session
 
     def get_classes(self, target_day: datetime, family_id: str | None = None):
-        response = self.session.get(
-            classes_endpoint(self.box_name),
-            params={
-                "box": self.box_id,
-                "day": target_day.strftime("%Y%m%d"),
-                "familyId": family_id,
-            },
+        try:
+            response = self.session.get(
+                classes_endpoint(self.box_name),
+                params={
+                    "box": self.box_id,
+                    "day": target_day.strftime("%Y%m%d"),
+                    "familyId": family_id,
+                },
+                timeout=self.REQUEST_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError) as error:
+            raise AimHarderUnavailable(
+                "AimHarder classes request failed or returned invalid JSON"
+            ) from error
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("bookings"), list
+        ):
+            raise AimHarderUnavailable("AimHarder returned an invalid classes response")
+        return payload["bookings"]
+
+    def _is_class_booked(self, target_day, class_id, family_id=None):
+        classes = self.get_classes(target_day, family_id)
+        return any(
+            str(item.get("id")) == str(class_id) and item.get("bookState") == 1
+            for item in classes
         )
-        return response.json().get("bookings")
 
     def book_class(
         self, target_day: datetime, class_id: str, family_id: str | None = None
     ) -> bool:
-        response = self.session.post(
-            book_endpoint(self.box_name),
-            data={
-                "id": class_id,
-                "day": target_day.strftime("%Y%m%d"),
-                "insist": 0,
-                "familyId": family_id,
-            },
-        )
+        try:
+            response = self.session.post(
+                book_endpoint(self.box_name),
+                data={
+                    "id": class_id,
+                    "day": target_day.strftime("%Y%m%d"),
+                    "insist": 0,
+                    "familyId": family_id,
+                },
+                timeout=self.REQUEST_TIMEOUT,
+            )
+        except requests.RequestException as error:
+            # The server may have accepted the request before the connection failed.
+            try:
+                if self._is_class_booked(target_day, class_id, family_id):
+                    return True
+            except (AimHarderUnavailable, requests.RequestException, ValueError):
+                pass
+            raise BookingUnconfirmed(
+                "Booking request outcome is unknown; verification failed"
+            ) from error
+
         if response.status_code == HTTPStatus.OK:
-            response = response.json()
-            if response.get("bookState") == -2:
-                raise BookingFailed(MESSAGE_BOOKING_FAILED_NO_CREDIT)
-            if response.get("bookState") == -5:
-                raise BookingFailed(MESSAGE_BOOKING_FAILED_PENDING_PAYMENT)
-            if response.get("bookState") == -12:
-                raise BookingFailed(MESSAGE_TOO_SOON_TO_BOOK)
-            # booking went fine
-            return
-        raise BookingFailed(MESSAGE_BOOKING_FAILED_UNKNOWN)
+            try:
+                result = response.json()
+            except ValueError:
+                result = {}
+            state = result.get("bookState") if isinstance(result, dict) else None
+            known_errors = {
+                -2: MESSAGE_BOOKING_FAILED_NO_CREDIT,
+                -5: MESSAGE_BOOKING_FAILED_PENDING_PAYMENT,
+                -12: MESSAGE_TOO_SOON_TO_BOOK,
+            }
+            if state in known_errors:
+                raise BookingFailed(known_errors[state])
+        else:
+            # For server errors, verify before treating the request as failed:
+            # AimHarder may have processed it despite a lost/invalid response.
+            pass
+
+        try:
+            if self._is_class_booked(target_day, class_id, family_id):
+                return True
+        except (AimHarderUnavailable, requests.RequestException, ValueError) as error:
+            raise BookingUnconfirmed(
+                "Booking request was sent but its result could not be verified"
+            ) from error
+
+        if response.status_code != HTTPStatus.OK:
+            raise BookingUnconfirmed(
+                f"AimHarder returned HTTP {response.status_code}; booking not confirmed"
+            )
+        raise BookingUnconfirmed(
+            "AimHarder accepted the request but the class is not marked as booked"
+        )

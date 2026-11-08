@@ -7,8 +7,8 @@ Python script to automate your session bookings in [aimharder.com](http://aimhar
 Having docker installed you only need to do the following command:
 
 ```bash
-docker run -e email=your.email@mail.com -e password=1234 -e booking-goals='{"0":{"time":"1815","name":"Provenza"}}' -e box-name=lahuellacrossfit -e box-id=3984 -e days-in-advance=3 pablobuenaposada/fitbot
-````
+docker run --env-file .env --env-file .env.secrets pablobuenaposada/fitbot
+```
 Explanation about the fields:
 
 `email`: self-explanatory
@@ -34,12 +34,36 @@ which should be sent in this form:
 
 <img src="https://raw.github.com/pablobuenaposada/fitbot/master/inspect.png" data-canonical-src="https://raw.github.com/pablobuenaposada/fitbot/master/inspect.png" height="300" />
 
-`days-in-advance`: this is how many days in advance the script should try to book classes from, so for example, if this script is being run on a Monday and this field is set to 3 it's going to try book Thursday class from `booking_goals`
+`days-in-advance`: this is how many days in advance the script should try to book classes from, so for example, if this field is being run on a Monday and this field is set to 3 it's going to try book Thursday class from `booking_goals`
 
-`family-id`: Optional. This is the id for the person who wants to book a class in case the account has more than one member. 
+`family-id`: Optional. it's the id for the person who wants to book a class in case the account has more than one member. 
 The value for this parameter can be found by inspecting the requests with the browser, as with the field `box-id`.
 
-`proxy`: Optional. If you want to use a proxy, you can set it with the format `socks5://ip:port`.
+`proxy`: Optional. For the Python CLI, set the `PROXY` environment variable (for example, `socks5://ip:port`). Avoid passing proxy credentials as command-line arguments.
+
+## Protected QStash scheduling API (Preview and Production)
+
+The `POST /api/schedule` endpoint creates a one-off QStash message for a booking already present in `reservas.json`. It is available only on Vercel Preview and Production deployments and always requires the administrative bearer token. It can publish schedules while `DRY_RUN=false`; the booking execution mode is determined separately by `DRY_RUN` when `/api/book` runs.
+
+Configure these environment variables separately for **Preview** and **Production** in Vercel:
+
+- `FITBOT_ADMIN_TOKEN`: a long, random administrative bearer token. Use a strong value and keep it secret.
+- `QSTASH_TOKEN`: QStash publishing token.
+- `FITBOT_WEBHOOK_URL`: exact public URL of `/api/book` for that environment. Preview and Production must use their own deployment URLs.
+- `VERCEL_AUTOMATION_BYPASS_SECRET`: required for protected Preview deployments. It is forwarded to QStash using `Upstash-Forward-x-vercel-protection-bypass`. Configure it for Production too if the Production deployment is protected by Vercel Authentication; otherwise it may be omitted there.
+
+For **Production**, also configure the runtime variables used by `/api/book`: the appropriate AimHarder account credentials, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN`. Keep `DRY_RUN=true` in both Preview and Production by default. Only change Production to `DRY_RUN=false` after a successful end-to-end simulation and explicit authorization to activate real bookings. Preview is forced to dry-run by the webhook code.
+
+Example request (do not put real tokens in source control or chat):
+
+```bash
+curl --request POST "https://YOUR-PREVIEW-URL/api/schedule" \
+  --header "Authorization: Bearer $FITBOT_ADMIN_TOKEN" \
+  --header "Content-Type: application/json" \
+  --data '{"date":"2026-11-06","opens_at":"2026-11-03T08:00:00","time":"08:00","name":"Strength Conditioning"}'
+```
+
+The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview or Production. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. The response does not claim a dry-run/live mode: `/api/book` reads `DRY_RUN` when the message is delivered.
 
 ## Using env files
 
@@ -65,13 +89,15 @@ You can use env files for configuration and credentials instead of passing them 
 > **Security Note:** `.env.secrets` is gitignored to prevent accidentally committing credentials. Never commit this file.
 
 ## 🚨 Proxy note 🚨
-It appears that AimHarder has started blocking connections by returning a 403 error based on the IP address location. If you are running this script from outside Spain, you may encounter these errors, which is why the proxy argument has been added.
+
+It appears that AimHarder has started blocking connections by returning a 403 error based on the IP address location. If you are running this script from outside Spain, you may encounter these errors, which is why optional proxy support is available through the `PROXY` environment variable.
 
 The United States seems to be heavily blocked (possibly only Azure IPs), so running this script from GitHub Actions will likely fail without a proxy. While this is not confirmed, it seems AimHarder doesn't like the use of automated scripts, especially when run for free via GitHub Actions 😀. If you choose this approach, ensure you use a proxy that is not blocked by AimHarder.
 
 **Note:** Use free proxies at your own risk, as your credentials will be transmitted through them. Additionally avoid sharing the proxy you are using in here since AimHarder may block it.
 
 ## I'm a cheapo, can I run this without using my own infrastructure for free?
+
 Yes, you can! By using GitHub Actions, you can run this script without needing your own infrastructure. It can also be configured to run automatically on a schedule. For details about potential connection blocks and proxy usage, refer to the previous section.
 
 You can find an example of the GitHub Actions workflow in the [`.github/workflows/scheduled.yml`](.github/workflows/scheduled.yml) file.

@@ -6,21 +6,26 @@ on:
     branches: [ master ]
 
 jobs:
-  format:
-    name: Run code formatting checks
+  lint:
+    name: Run Ruff checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - name: Check lint
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --select E4,E7,E9,F"
+      - name: Check formatting
+        uses: astral-sh/ruff-action@v3
         with:
           args: "format --check"
 
   tests:
-    name: Run unit tests
+    name: Run complete test suite
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: build docker image
-      run: make docker/build
-    - name: unit tests
-      run: make docker/tests
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: make docker/build
+      - name: Run all tests
+        run: make docker/tests
