@@ -52,7 +52,7 @@ Configure these environment variables separately for **Preview** and **Productio
 - `FITBOT_WEBHOOK_URL`: exact public URL of `/api/book` for that environment. Preview and Production must use their own deployment URLs.
 - `VERCEL_AUTOMATION_BYPASS_SECRET`: required for protected Preview deployments. It is forwarded to QStash using `Upstash-Forward-x-vercel-protection-bypass`. Configure it for Production too if the Production deployment is protected by Vercel Authentication; otherwise it may be omitted there.
 
-For **Production**, also configure the runtime variables used by `/api/book`: `EMAIL`, `PASSWORD`, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, and `DRY_RUN=false`. Keep `DRY_RUN=true` in Preview unless you intentionally want real bookings there.
+For **Production**, also configure the runtime variables used by `/api/book`: the appropriate AimHarder account credentials, `QSTASH_CURRENT_SIGNING_KEY`, `QSTASH_NEXT_SIGNING_KEY`, `UPSTASH_REDIS_REST_URL`, and `UPSTASH_REDIS_REST_TOKEN`. Keep `DRY_RUN=true` in both Preview and Production by default. Only change Production to `DRY_RUN=false` after a successful end-to-end simulation and explicit authorization to activate real bookings. Preview is forced to dry-run by the webhook code.
 
 Example request (do not put real tokens in source control or chat):
 
@@ -60,7 +60,7 @@ Example request (do not put real tokens in source control or chat):
 curl --request POST "https://YOUR-PREVIEW-URL/api/schedule" \
   --header "Authorization: Bearer $FITBOT_ADMIN_TOKEN" \
   --header "Content-Type: application/json" \
-  --data '{"date":"2026-11-06","opens_at":"2026-11-03T08:00:00","time":"08:00","name":"Strength & Conditioning"}'
+  --data '{"date":"2026-11-06","opens_at":"2026-11-03T08:00:00","time":"08:00","name":"Strength Conditioning"}'
 ```
 
 The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview or Production. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. The response does not claim a dry-run/live mode: `/api/book` reads `DRY_RUN` when the message is delivered.
