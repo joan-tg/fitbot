@@ -167,6 +167,40 @@ class handler(BaseHTTPRequestHandler):
         # inspecting stale processing records so recovery uses the same namespace.
         is_preview = os.environ.get("VERCEL_ENV") == "preview"
         dry_run = is_preview or os.environ.get("DRY_RUN", "true").lower() != "false"
+        if status == "scheduling":
+            # A valid QStash delivery proves publication succeeded. Recover the
+            # intermediate state left behind if QStash accepted the message but
+            # the API could not persist its message ID/status in Redis.
+            recovered = redis.update_booking_status(
+                booking_id,
+                "scheduled",
+                expected_statuses=["scheduling"],
+                metadata={
+                    "scheduled_at": booking.get("opens_at"),
+                    "error_code": None,
+                },
+            )
+            if recovered is None:
+                booking = redis.get_booking(booking_id)
+                if booking is None:
+                    return _response(self, 404, {"error": "Booking not found"})
+                status = booking.get("status")
+            else:
+                booking = recovered
+                status = "scheduled"
+            if status == "cancelled":
+                return _response(self, 200, {"status": "cancelled_ignored"})
+            if status != "scheduled":
+                return _response(
+                    self,
+                    200,
+                    {"status": "duplicate_ignored", "booking_id": booking_id},
+                )
+            logger.warning(
+                "Recovered booking %s from scheduling after QStash delivery",
+                booking_id,
+            )
+
         if status == "processing":
             if _recover_stale_processing(booking, redis, dry_run=dry_run):
                 return _response(
