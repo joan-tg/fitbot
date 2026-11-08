@@ -553,7 +553,8 @@ def test_qstash_delivery_recovers_booking_left_in_scheduling(monkeypatch):
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
 
     def fake_run(config, now=None, force_dry_run=False):
-        assert config["bookings"] == [stored]
+        assert config["bookings"][0]["id"] == booking["id"]
+        assert config["bookings"][0]["status"] == "scheduled"
         assert config["dry_run"] is True
         assert force_dry_run is True
         calls.append("run")
