@@ -507,7 +507,10 @@ class handler(BaseHTTPRequestHandler):
                     },
                 )
 
-            dry_run = os.environ.get("DRY_RUN", "true").lower() != "false"
+            # Preview is always simulation-only, including the legacy static path.
+            # Do not let a misconfigured DRY_RUN=false reach AimHarder from Preview.
+            is_preview = os.environ.get("VERCEL_ENV") == "preview"
+            dry_run = is_preview or os.environ.get("DRY_RUN", "true").lower() != "false"
             config["bookings"] = [booking]
             config["dry_run"] = dry_run
             redis = UpstashRedis()
@@ -529,7 +532,7 @@ class handler(BaseHTTPRequestHandler):
                 )
 
             try:
-                result = run(config, now=now)
+                result = run(config, now=now, force_dry_run=dry_run)
             except IncorrectCredentials:
                 # Bad credentials will not recover by retrying this message.
                 # Mark it non-retryable so QStash sends it to the DLQ for review.
