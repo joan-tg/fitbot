@@ -74,7 +74,9 @@ class handler(BaseHTTPRequestHandler):
                 or any(not isinstance(value, str) for value in timestamps)
             ):
                 return _response(
-                    self, 400, {"error": "recorded_at must be a list of 1 to 10 timestamps"}
+                    self,
+                    400,
+                    {"error": "recorded_at must be a list of 1 to 10 timestamps"},
                 )
             for value in timestamps:
                 parsed = datetime.fromisoformat(value)
