@@ -184,6 +184,44 @@ def test_list_booking_results_reads_and_decodes_json_records():
     ]
 
 
+def test_delete_confirmed_booking_results_matches_only_exact_live_confirmed_timestamps():
+    session = FakeSession([2])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    deleted = redis.delete_confirmed_booking_results(
+        ["2026-11-07T08:00:08.140428+00:00", "2026-11-06T17:15:02.501123+00:00"]
+    )
+
+    assert deleted == 2
+    command = session.calls[0][1]["json"]
+    assert command[0] == "EVAL"
+    assert "item.status == 'booking_confirmed'" in command[1]
+    assert "item.dry_run == false" in command[1]
+    assert "item.recorded_at == timestamp" in command[1]
+    assert command[3] == redis.RESULTS_KEY
+    assert json.loads(command[4]) == [
+        "2026-11-07T08:00:08.140428+00:00",
+        "2026-11-06T17:15:02.501123+00:00",
+    ]
+
+
+def test_delete_confirmed_booking_results_rejects_empty_or_oversized_selection():
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=FakeSession([]),
+    )
+
+    with pytest.raises(ValueError, match="1 and 10"):
+        redis.delete_confirmed_booking_results([])
+    with pytest.raises(ValueError, match="1 and 10"):
+        redis.delete_confirmed_booking_results(["timestamp"] * 11)
+
+
 def make_booking_record(**overrides):
     record = {
         "id": "a" * 32,
