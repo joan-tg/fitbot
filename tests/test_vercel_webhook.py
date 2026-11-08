@@ -548,3 +548,66 @@ def test_dynamic_booking_with_unknown_id_returns_404(monkeypatch):
 
     assert request.status == 404
     assert response["error"] == "Booking not found"
+
+
+def test_legacy_static_booking_in_preview_is_forced_to_dry_run(monkeypatch):
+    import api.book as book_api
+
+    booking = {
+        "date": "2026-11-06",
+        "opens_at": "2026-11-06T09:00:00",
+        "time": "09:00",
+        "name": "Weightlifting",
+    }
+    calls = []
+
+    class FakeRedis:
+        def acquire(self, record, dry_run, ttl_seconds):
+            assert record == booking
+            assert dry_run is True
+            calls.append(("acquire", dry_run))
+            return "preview-lock"
+
+        def complete(self, record, token, status, dry_run=False, ttl_seconds=60):
+            assert dry_run is True
+            calls.append(("complete", status, dry_run))
+            return True
+
+        def record_booking_result(self, record):
+            calls.append(("history", record["status"], record["dry_run"]))
+
+    def fake_run(config, now=None, force_dry_run=False):
+        assert config["dry_run"] is True
+        assert config["bookings"] == [booking]
+        assert force_dry_run is True
+        calls.append(("run", force_dry_run))
+        return {"status": "completed", "outcomes": [{"status": "dry_run"}]}
+
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
+    monkeypatch.setattr(
+        book_api,
+        "load_config",
+        lambda path: {
+            "timezone": "Europe/Madrid",
+            "window_minutes": 30,
+            "bookings": [booking],
+        },
+    )
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(book_api, "run", fake_run)
+
+    request = FakeHandler(json.dumps(booking).encode())
+    response = request.post()
+
+    assert request.status == 200
+    assert response["status"] == "dry_run"
+    assert response["dry_run"] is True
+    assert calls == [
+        ("acquire", True),
+        ("run", True),
+        ("complete", "dry_run", True),
+        ("history", "dry_run", True),
+    ]
