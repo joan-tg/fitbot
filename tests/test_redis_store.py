@@ -310,6 +310,29 @@ def test_update_booking_status_uses_atomic_expected_state_guard():
     assert json.loads(command[7]) == {"message_id": "qstash-id"}
 
 
+def test_update_booking_status_clears_nullable_metadata_safely():
+    updated = make_booking_record(status="scheduled")
+    session = FakeSession([[1, json.dumps(updated)]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    result = redis.update_booking_status(
+        "a" * 32,
+        "scheduled",
+        expected_statuses=["scheduling"],
+        metadata={"error_code": None},
+    )
+
+    assert result == updated
+    command = session.calls[0][1]["json"]
+    assert "value == cjson.null" in command[1]
+    assert "booking[key] = nil" in command[1]
+    assert json.loads(command[7]) == {"error_code": None}
+
+
 def test_update_booking_status_reports_conflict_and_missing_record():
     session = FakeSession([[0, "status_conflict"], [0, "not_found"]])
     redis = UpstashRedis(
