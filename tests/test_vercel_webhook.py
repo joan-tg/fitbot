@@ -506,6 +506,79 @@ def test_dynamic_booking_loads_redis_record_claims_and_records_dry_run(monkeypat
     ]
 
 
+def test_qstash_delivery_recovers_booking_left_in_scheduling(monkeypatch):
+    import api.book as book_api
+
+    booking = _dynamic_booking(status="scheduling")
+    stored = dict(booking)
+    transitions = []
+    calls = []
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            assert booking_id == booking["id"]
+            return dict(stored)
+
+        def update_booking_status(
+            self, booking_id, status, expected_statuses=None, metadata=None
+        ):
+            assert booking_id == booking["id"]
+            assert stored["status"] in expected_statuses
+            transitions.append((stored["status"], status))
+            stored.update(metadata or {})
+            stored["status"] = status
+            return dict(stored)
+
+        def acquire(self, record, dry_run, ttl_seconds):
+            assert record["id"] == booking["id"]
+            assert dry_run is True
+            calls.append("lock")
+            return "owner-token"
+
+        def complete(self, record, token, status, dry_run=False, ttl_seconds=60):
+            calls.append(("complete", status))
+            return True
+
+        def release(self, *args, **kwargs):
+            pytest.fail("successful recovered dry-run must complete its lock")
+
+        def record_booking_result(self, record):
+            calls.append(("history", record["status"]))
+
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+
+    def fake_run(config, now=None, force_dry_run=False):
+        assert config["bookings"] == [stored]
+        assert config["dry_run"] is True
+        assert force_dry_run is True
+        calls.append("run")
+        return {"status": "completed", "outcomes": [{"status": "dry_run"}]}
+
+    monkeypatch.setattr(book_api, "run", fake_run)
+    request = FakeHandler(json.dumps({"booking_id": booking["id"]}).encode())
+    response = request.post()
+
+    assert request.status == 200
+    assert response["status"] == "dry_run"
+    assert stored["status"] == "dry_run"
+    assert transitions == [
+        ("scheduling", "scheduled"),
+        ("scheduled", "processing"),
+        ("processing", "dry_run"),
+    ]
+    assert calls == [
+        "lock",
+        "run",
+        ("complete", "dry_run"),
+        ("history", "dry_run"),
+    ]
+
+
 def test_dynamic_cancelled_booking_never_contacts_aimharder(monkeypatch):
     import api.book as book_api
 
