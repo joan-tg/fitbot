@@ -25,6 +25,7 @@ MAX_BODY_BYTES = 16_384
 IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
 ALLOWED_REQUEST_FIELDS = {"person_id", "date", "time", "name"}
 CLAIMABLE_STATUSES = ("pending_schedule", "schedule_failed")
+QSTASH_MAX_DELAY = timedelta(days=7)
 
 
 def _respond(handler, status, payload):
@@ -137,6 +138,11 @@ def _build_booking(payload, config, now=None, booking_id=None):
     ).astimezone(local_tz)
     if opens_at <= now:
         raise ValueError("Booking opening time has already passed")
+    qstash_delay = opens_at.astimezone(timezone.utc) - now.astimezone(timezone.utc)
+    if qstash_delay > QSTASH_MAX_DELAY:
+        raise ValueError(
+            "Booking opening time must be within QStash's 7-day free-plan limit"
+        )
 
     return {
         "id": booking_id or uuid.uuid4().hex,
