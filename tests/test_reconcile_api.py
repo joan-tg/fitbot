@@ -48,7 +48,11 @@ def booking(status, updated_at=None, opens_at=None, booking_id=None):
         "time": "12:00",
         "name": "Strength Conditioning",
         "activity_type": "class",
-        "opens_at": opens_at or (NOW + timedelta(hours=2)).isoformat(),
+        "opens_at": (
+            opens_at.isoformat()
+            if isinstance(opens_at, datetime)
+            else opens_at or (NOW + timedelta(hours=2)).isoformat()
+        ),
         "status": status,
         "created_at": (NOW - timedelta(minutes=10)).isoformat(),
         "updated_at": (updated_at or (NOW - timedelta(minutes=10))).isoformat(),
@@ -153,6 +157,9 @@ class FakeHandler:
         self.path = "/api/reconcile"
         self.status = None
 
+    def _run(self):
+        return reconcile_api.handler._run(self)
+
     def send_response(self, status):
         self.status = status
 
@@ -171,14 +178,15 @@ class FakeHandler:
         return json.loads(self.wfile.getvalue())
 
 
-def test_reconcile_endpoint_accepts_cron_secret(monkeypatch):
-    monkeypatch.setenv("CRON_SECRET", "cron-token")
+def test_reconcile_endpoint_accepts_admin_token(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-token")
     monkeypatch.setenv("VERCEL_ENV", "preview")
-    request = FakeHandler(token="cron-token")
-    monkeypatch.setattr(reconcile_api, "load_config", lambda path: {
-        "timezone": "Europe/Madrid",
-        "window_minutes": 30,
-    })
+    request = FakeHandler(token="admin-token")
+    monkeypatch.setattr(
+        reconcile_api,
+        "load_config",
+        lambda path: {"timezone": "Europe/Madrid", "window_minutes": 30},
+    )
     class EndpointRedis(FakeRedis):
         BOOKINGS_MAX_ITEMS = 500
 
@@ -203,6 +211,7 @@ def test_reconcile_endpoint_rejects_unauthorized_request(monkeypatch):
 
     assert request.status == 401
     assert response["error"] == "Unauthorized"
+
 
 def test_reconcile_endpoint_accepts_signed_qstash_post(monkeypatch):
     monkeypatch.setenv("VERCEL_ENV", "preview")
