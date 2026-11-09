@@ -170,7 +170,13 @@ def test_reconcile_endpoint_accepts_cron_secret(monkeypatch):
         "timezone": "Europe/Madrid",
         "window_minutes": 30,
     })
-    monkeypatch.setattr(reconcile_api, "UpstashRedis", lambda: FakeRedis([]))
+    class EndpointRedis(FakeRedis):
+        BOOKINGS_MAX_ITEMS = 500
+
+        def __init__(self):
+            super().__init__([])
+
+    monkeypatch.setattr(reconcile_api, "UpstashRedis", EndpointRedis)
 
     response = request.get()
 
