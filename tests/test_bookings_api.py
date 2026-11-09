@@ -176,7 +176,7 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(bookings_api.requests, "post", fake_post)
 
-    payload = dict(VALID_PAYLOAD, date="2026-11-11")
+    payload = dict(VALID_PAYLOAD, date="2026-11-13")
     result, published = bookings_api._create_booking(payload, "client-request-0001")
 
     assert published is True
@@ -196,11 +196,11 @@ def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypat
     record = {
         "id": "a" * 32,
         "person_id": "person_1",
-        "date": "2026-11-11",
+        "date": "2026-11-13",
         "time": "13:00",
         "name": "Strength Conditioning",
         "activity_type": "class",
-        "opens_at": "2026-11-08T13:00:00+01:00",
+        "opens_at": "2026-11-10T13:00:00+01:00",
         "status": "scheduled",
         "created_at": NOW.isoformat(),
         "message_id": "existing-message",
@@ -320,6 +320,8 @@ def test_patch_binds_replacement_to_original_idempotency_key(monkeypatch):
     }
 
     class FakeRedis:
+        BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+
         def get_booking(self, booking_id):
             return dict(previous)
 
@@ -397,6 +399,8 @@ def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatc
     updates = []
 
     class FakeRedis:
+        BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+
         def get_booking(self, booking_id):
             return dict(previous)
 
