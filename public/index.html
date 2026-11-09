@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <meta name="description" content="Panel privado de automatización de reservas FitBot">
+  <title>FitBot · Panel de control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="FitBot inicio">
+        <span class="brand-mark">F</span>
+        <span>fit<span class="brand-light">bot</span></span>
+      </a>
+      <div class="topbar-right">
+        <span class="environment"><i></i> PREVIEW · SIMULACIÓN</span>
+        <button class="icon-button" id="refresh-button" type="button" aria-label="Actualizar datos" title="Actualizar datos">↻</button>
+        <button class="text-button" id="logout-button" type="button" hidden>Desconectar</button>
+      </div>
+    </header>
+
+    <section class="auth-panel panel" id="auth-panel">
+      <div class="eyebrow">ACCESO PRIVADO</div>
+      <h1>Tu entrenamiento,<br><span>siempre reservado.</span></h1>
+      <p class="muted">Introduce el token administrativo de FitBot para acceder al panel.</p>
+      <form id="auth-form" class="auth-form">
+        <label for="admin-token">Token de administración</label>
+        <input id="admin-token" type="password" autocomplete="current-password" placeholder="FITBOT_ADMIN_TOKEN" required>
+        <button class="primary-button" type="submit">Conectar al panel <span>→</span></button>
+      </form>
+      <p class="fine-print">El token solo se conserva en esta pestaña durante la sesión.</p>
+      <p class="form-error" id="auth-error" role="alert"></p>
+    </section>
+
+    <div id="dashboard" hidden>
+      <section class="welcome-row">
+        <div>
+          <div class="eyebrow">PANEL DE CONTROL</div>
+          <h1>Hola. Vamos a <span>entrenar.</span></h1>
+          <p class="muted">Gestiona las reservas de tus cuentas de StudioCrossFit.</p>
+        </div>
+        <div class="mode-card"><span class="mode-dot"></span><div><strong>Modo simulación</strong><small>Las reservas reales están desactivadas</small></div></div>
+      </section>
+
+      <section class="stats-grid" aria-label="Resumen">
+        <article class="stat-card"><span class="stat-label">PROGRAMADAS</span><strong id="stat-scheduled">—</strong><small>Esperando su apertura</small></article>
+        <article class="stat-card"><span class="stat-label">SIMULADAS</span><strong id="stat-dry-run">—</strong><small>Procesadas sin reservar</small></article>
+        <article class="stat-card"><span class="stat-label">INCIDENCIAS</span><strong id="stat-errors">—</strong><small>Requieren revisión</small></article>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel booking-panel">
+          <div class="section-heading">
+            <div><div class="eyebrow">NUEVA AUTOMATIZACIÓN</div><h2>Programar reserva</h2></div>
+            <span class="step-number">01</span>
+          </div>
+          <form id="booking-form">
+            <div class="field">
+              <label for="person">Persona</label>
+              <select id="person" required>
+                <option value="person_1">Persona 1</option>
+                <option value="person_2">Persona 2</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="activity">Actividad</label>
+              <select id="activity" required>
+                <option>Strength Conditioning</option>
+                <option>CrossFit</option>
+                <option>Weightlifting</option>
+                <option>Fuerza</option>
+                <option>Metcon</option>
+                <option>Gymnastic</option>
+                <option>Handstand &amp; Flex</option>
+                <option>Open Box</option>
+              </select>
+            </div>
+            <div class="form-row">
+              <div class="field"><label for="class-date">Fecha de la clase</label><input id="class-date" type="date" required></div>
+              <div class="field"><label for="class-time">Hora</label><input id="class-time" type="time" required></div>
+            </div>
+            <div class="info-note"><span>ⓘ</span><p>FitBot calculará automáticamente la apertura de reservas (72 horas antes) y programará la tarea.</p></div>
+            <button class="primary-button full-width" id="schedule-button" type="submit">Programar reserva <span>→</span></button>
+            <p class="form-error" id="booking-error" role="alert"></p>
+            <p class="form-success" id="booking-success" role="status"></p>
+          </form>
+        </article>
+
+        <article class="panel activity-panel">
+          <div class="section-heading">
+            <div><div class="eyebrow">ESTADO DEL SISTEMA</div><h2>Actividad reciente</h2></div>
+            <span class="live-label"><i></i> ACTUALIZADO</span>
+          </div>
+          <div id="activity-list" class="activity-list"><div class="empty-state">Cargando actividad…</div></div>
+        </article>
+      </section>
+
+      <section class="panel history-panel">
+        <div class="section-heading history-heading">
+          <div><div class="eyebrow">TU AGENDA</div><h2>Reservas programadas</h2></div>
+          <div class="history-actions"><span id="last-updated" class="muted small-text"></span><button id="refresh-inline" class="outline-button" type="button">Actualizar ↻</button></div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>PERSONA</th><th>ACTIVIDAD</th><th>CLASE</th><th>APERTURA</th><th>ESTADO</th></tr></thead>
+            <tbody id="booking-rows"><tr><td colspan="5" class="empty-state">Cargando reservas…</td></tr></tbody>
+          </table>
+        </div>
+      </section>
+      <footer class="footer"><span>FITBOT <b>·</b> AUTOMATIZACIÓN DE RESERVAS</span><span>Europe/Madrid</span></footer>
+    </div>
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
