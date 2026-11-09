@@ -225,7 +225,7 @@ def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypat
         lambda *args, **kwargs: pytest.fail("duplicate must not publish"),
     )
 
-    payload = dict(VALID_PAYLOAD, date="2026-11-11")
+    payload = dict(VALID_PAYLOAD, date="2026-11-13")
     result, published = bookings_api._create_booking(payload, "client-request-0001")
 
     assert published is False
@@ -354,6 +354,8 @@ def test_patch_rejects_a_different_key_for_already_replaced_booking(monkeypatch)
     }
 
     class FakeRedis:
+        BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+
         def get_booking(self, booking_id):
             return dict(previous)
 
