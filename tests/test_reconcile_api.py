@@ -188,6 +188,7 @@ def test_reconcile_endpoint_accepts_admin_token(monkeypatch):
         "load_config",
         lambda path: {"timezone": "Europe/Madrid", "window_minutes": 30},
     )
+
     class EndpointRedis(FakeRedis):
         BOOKINGS_MAX_ITEMS = 500
 
