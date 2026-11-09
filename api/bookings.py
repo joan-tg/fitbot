@@ -403,11 +403,16 @@ class handler(BaseHTTPRequestHandler):
                     )
             elif previous_status == "replaced":
                 stored_key_hash = previous.get("replacement_key_hash", "")
-                replacement_key_matches = (
-                    isinstance(stored_key_hash, str)
-                    and hmac.compare_digest(stored_key_hash, replacement_key_hash)
-                )
-                if not replacement_key_matches:
+                if not isinstance(stored_key_hash, str):
+                    return _respond(
+                        self,
+                        409,
+                        {
+                            "error": "This booking has already been replaced by another edit",
+                            "status": previous_status,
+                        },
+                    )
+                if not hmac.compare_digest(stored_key_hash, replacement_key_hash):
                     return _respond(
                         self,
                         409,
