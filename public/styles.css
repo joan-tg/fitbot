@@ -8,3 +8,13 @@
 .row-actions{display:flex;align-items:center;gap:6px}.edit-button{border:1px solid rgba(140,226,192,.35);background:rgba(140,226,192,.07);color:var(--mint);border-radius:8px;padding:6px 10px;font:600 12px "DM Sans",sans-serif;cursor:pointer;white-space:nowrap}.edit-button:hover{background:rgba(140,226,192,.15)}
 
 .status-replaced{background:#263347;color:#8c9bad}
+
+.history-filters{display:grid;grid-template-columns:1.1fr 1.1fr 1fr 1fr auto;gap:10px;align-items:end;margin:0 0 16px;padding:14px;background:rgba(10,20,34,.45);border:1px solid rgba(255,255,255,.06);border-radius:12px}
+.filter-field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.filter-field label{font-size:10px;color:#aab8c9;font-weight:600}
+.filter-field input,.filter-field select{width:100%;min-width:0;min-height:36px;background:#0d1726;border:1px solid #304158;border-radius:8px;color:var(--text);padding:7px 9px;font:inherit;font-size:11px}
+.filter-field input:focus,.filter-field select:focus{outline:none;border-color:var(--mint);box-shadow:0 0 0 3px #8ce2c018}
+.filter-clear{min-height:36px;white-space:nowrap}
+.status-incorrect_credentials,.status-class_not_found{background:#432b32;color:var(--red)}
+@media(max-width:820px){.history-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.filter-clear{width:100%}}
+@media(max-width:560px){.history-filters{grid-template-columns:1fr 1fr;gap:8px}.history-actions{flex-wrap:wrap}.history-actions #last-updated{display:none}}
