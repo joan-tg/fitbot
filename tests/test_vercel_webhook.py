@@ -506,10 +506,13 @@ def test_dynamic_booking_loads_redis_record_claims_and_records_dry_run(monkeypat
     ]
 
 
-def test_qstash_delivery_recovers_booking_left_in_scheduling(monkeypatch):
+@pytest.mark.parametrize("initial_status", ["scheduling", "schedule_failed"])
+def test_qstash_delivery_recovers_unconfirmed_publication_status(
+    monkeypatch, initial_status
+):
     import api.book as book_api
 
-    booking = _dynamic_booking(status="scheduling")
+    booking = _dynamic_booking(status=initial_status)
     stored = dict(booking)
     transitions = []
     calls = []
@@ -568,7 +571,7 @@ def test_qstash_delivery_recovers_booking_left_in_scheduling(monkeypatch):
     assert response["status"] == "dry_run"
     assert stored["status"] == "dry_run"
     assert transitions == [
-        ("scheduling", "scheduled"),
+        (initial_status, "scheduled"),
         ("scheduled", "processing"),
         ("processing", "dry_run"),
     ]
@@ -578,6 +581,68 @@ def test_qstash_delivery_recovers_booking_left_in_scheduling(monkeypatch):
         ("complete", "dry_run"),
         ("history", "dry_run"),
     ]
+
+
+def test_dynamic_processing_delivery_is_retried_while_first_attempt_is_active(
+    monkeypatch,
+):
+    import api.book as book_api
+
+    booking = _dynamic_booking(status="processing")
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(booking)
+
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        book_api, "run", lambda *args, **kwargs: pytest.fail("must not run twice")
+    )
+
+    request = FakeHandler(json.dumps({"booking_id": booking["id"]}).encode())
+    response = request.post()
+
+    assert request.status == 503
+    assert response["status"] == "execution_in_progress"
+    assert request.response_headers["Retry-After"] == "60"
+
+
+def test_dynamic_booking_lock_contention_is_retried_not_acknowledged(monkeypatch):
+    import api.book as book_api
+
+    booking = _dynamic_booking()
+    stored = dict(booking)
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(stored)
+
+        def acquire(self, record, dry_run, ttl_seconds):
+            return None
+
+        def update_booking_status(
+            self, booking_id, status, expected_statuses=None, metadata=None
+        ):
+            assert stored["status"] in expected_statuses
+            stored["status"] = status
+            return dict(stored)
+
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        book_api, "run", lambda *args, **kwargs: pytest.fail("lock contention")
+    )
+
+    request = FakeHandler(json.dumps({"booking_id": booking["id"]}).encode())
+    response = request.post()
+
+    assert request.status == 503
+    assert response["status"] == "execution_lock_busy"
+    assert request.response_headers["Retry-After"] == "60"
 
 
 def test_expired_dynamic_booking_is_marked_missed_and_recorded(monkeypatch):
