@@ -411,9 +411,7 @@ def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatc
         def get_booking(self, booking_id):
             return dict(previous)
 
-        def update_booking_status(
-            self, booking_id, status, expected_statuses, metadata
-        ):
+        def update_booking_status(self, booking_id, status, expected_statuses, metadata):
             updates.append((booking_id, status, expected_statuses, metadata))
             previous.update(metadata)
             previous["status"] = status
