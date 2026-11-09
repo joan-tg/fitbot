@@ -2,7 +2,7 @@
   "use strict";
   const API = { bookings: "/api/bookings?limit=50", results: "/api/results?limit=50" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -144,6 +144,8 @@
       const booking=state.bookings.find(item=>item.id===editButton.dataset.editId);
       if(!booking || editButton.disabled) return;
       state.editingBookingId=booking.id;
+      state.editingIdempotencyKey=null;
+      state.editingFingerprint=null;
       $("person").value=booking.person_id;
       $("activity").value=booking.name;
       $("class-date").value=booking.date;
@@ -166,6 +168,8 @@
   });
   $("stop-editing").addEventListener("click",()=>{
     state.editingBookingId=null;
+    state.editingIdempotencyKey=null;
+    state.editingFingerprint=null;
     $("booking-form").reset();
     $("schedule-button").textContent="Programar reserva →";
     $("stop-editing").hidden=true;
@@ -183,8 +187,13 @@
       name:$("activity").value
     };
     try {
-      const key="fitbot-ui-"+crypto.randomUUID();
       const editingId=state.editingBookingId;
+      const fingerprint=JSON.stringify(payload);
+      if(editingId && state.editingFingerprint!==fingerprint){
+        state.editingFingerprint=fingerprint;
+        state.editingIdempotencyKey="fitbot-ui-"+crypto.randomUUID();
+      }
+      const key=editingId ? state.editingIdempotencyKey : "fitbot-ui-"+crypto.randomUUID();
       const body=editingId ? {id:editingId,...payload} : payload;
       const data=await request("/api/bookings",{
         method:editingId?"PATCH":"POST",
@@ -193,6 +202,8 @@
       });
       success.textContent=(editingId?"Reserva modificada. ":"Reserva programada. ")+"Apertura: "+dateTime(data.booking?.opens_at)+". Estado: "+statusName(data.status)+"."; 
       state.editingBookingId=null;
+      state.editingIdempotencyKey=null;
+      state.editingFingerprint=null;
       button.textContent="Programar reserva →";
       $("stop-editing").hidden=true;
       toast(editingId?"Cambios guardados":"Automatización creada");
