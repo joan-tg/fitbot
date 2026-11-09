@@ -266,9 +266,10 @@ def test_stale_scheduling_record_is_recovered_and_republished_idempotently(monke
         ("schedule_failed", "scheduling"),
         ("scheduling", "scheduled"),
     ]
-    assert calls[0]["headers"]["Upstash-Deduplication-Id"] == hashlib.sha256(
+    expected_deduplication_id = hashlib.sha256(
         f"fitbot-booking:{stored['id']}".encode("utf-8")
     ).hexdigest()
+    assert calls[0]["headers"]["Upstash-Deduplication-Id"] == expected_deduplication_id
 
 
 def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypatch):
