@@ -27,6 +27,7 @@ IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
 ALLOWED_REQUEST_FIELDS = {"person_id", "date", "time", "name"}
 CLAIMABLE_STATUSES = ("pending_schedule", "schedule_failed")
 QSTASH_MAX_DELAY = timedelta(days=7)
+SCHEDULING_RECOVERY_SECONDS = 60
 
 
 def _respond(handler, status, payload):
@@ -179,6 +180,13 @@ def _publish_booking(booking, redis):
         "Authorization": f"Bearer {os.environ['QSTASH_TOKEN']}",
         "Content-Type": "application/json",
         "Upstash-Not-Before": str(not_before),
+        # Stable per booking: retries after an ambiguous network timeout must
+        # not enqueue another copy during QStash's 10-minute deduplication window.
+        "Upstash-Deduplication-Id": hashlib.sha256(
+            f"fitbot-booking:{booking['id']}".encode("utf-8")
+        ).hexdigest(),
+        "Upstash-Retries": "5",
+        "Upstash-Retry-Delay": "60000 * (1 + retried)",
     }
     bypass = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET")
     if bypass:
@@ -254,6 +262,36 @@ def _create_booking(payload, idempotency_key, prepared_booking=None):
 
     if stored["status"] == "scheduled":
         return stored, False
+
+    if stored["status"] == "scheduling":
+        updated_at = stored.get("updated_at")
+        try:
+            last_update = datetime.fromisoformat(updated_at)
+            if last_update.tzinfo is None:
+                raise ValueError("updated_at must include a timezone")
+        except (TypeError, ValueError):
+            # A malformed timestamp is not sufficient evidence that the
+            # publisher is abandoned; leave it untouched for manual review.
+            return stored, False
+
+        age = datetime.now(last_update.tzinfo) - last_update
+        if age <= timedelta(seconds=SCHEDULING_RECOVERY_SECONDS):
+            return stored, False
+
+        recovered = redis.update_booking_status(
+            booking_id,
+            "schedule_failed",
+            expected_statuses=["scheduling"],
+            metadata={"error_code": "stale_scheduling_recovered"},
+        )
+        if recovered is None:
+            latest = redis.get_booking(booking_id)
+            if latest is None:
+                raise RedisUnavailable("Booking disappeared during recovery")
+            stored = latest
+        else:
+            stored = recovered
+
     if stored["status"] not in CLAIMABLE_STATUSES:
         return stored, False
 
