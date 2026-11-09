@@ -559,9 +559,7 @@ class handler(BaseHTTPRequestHandler):
             if booking is None:
                 return _respond(self, 404, {"error": "Booking not found"})
             if booking.get("status") == "cancelled":
-                return _respond(
-                    self, 200, {"status": "cancelled", "booking": booking}
-                )
+                return _respond(self, 200, {"status": "cancelled", "booking": booking})
             cancellable = [
                 "pending_schedule",
                 "schedule_failed",
