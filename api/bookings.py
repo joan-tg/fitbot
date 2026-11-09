@@ -1,5 +1,6 @@
 """Protected endpoint for creating persistent, one-off booking schedules."""
 
+import hashlib
 import hmac
 import json
 import logging
@@ -225,7 +226,7 @@ def _publish_booking(booking, redis):
     return scheduled, True
 
 
-def _create_booking(payload, idempotency_key):
+def _create_booking(payload, idempotency_key, prepared_booking=None):
     deployment_env = os.environ.get("VERCEL_ENV")
     if deployment_env not in ("preview", "production"):
         raise PermissionError(
@@ -235,7 +236,7 @@ def _create_booking(payload, idempotency_key):
         raise ValueError("A valid Idempotency-Key header is required")
 
     config = load_config(ROOT / "reservas.json")
-    booking = _build_booking(payload, config)
+    booking = prepared_booking or _build_booking(payload, config)
 
     qstash_token = os.environ.get("QSTASH_TOKEN")
     webhook_url = os.environ.get("FITBOT_WEBHOOK_URL")
@@ -334,7 +335,7 @@ class handler(BaseHTTPRequestHandler):
             if not IDEMPOTENCY_KEY_PATTERN.fullmatch(idempotency_key or ""):
                 raise ValueError("A valid Idempotency-Key header is required")
             config = load_config(ROOT / "reservas.json")
-            _build_booking(new_payload, config)
+            prepared_booking = _build_booking(new_payload, config)
             if not os.environ.get("QSTASH_TOKEN") or not os.environ.get("FITBOT_WEBHOOK_URL"):
                 raise RuntimeError("QStash publishing is not configured")
             if os.environ.get("VERCEL_ENV") == "preview" and not os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET"):
@@ -344,22 +345,33 @@ class handler(BaseHTTPRequestHandler):
             if previous is None:
                 return _respond(self, 404, {"error": "Booking not found"})
             allowed = ["pending_schedule", "schedule_failed", "scheduling", "scheduled"]
-            # A retry after a transient QStash failure may arrive after the old
-            # record has already been marked replaced. In that case, reuse the
-            # same idempotency key to recover the replacement without changing
-            # the old record again.
-            if previous.get("status") not in ("cancelled", "replaced"):
+            replacement_key_hash = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+            previous_status = previous.get("status")
+            if previous_status in allowed:
                 replaced_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
                 replaced = redis.update_booking_status(
                     old_id,
                     "replaced",
                     expected_statuses=allowed,
-                    metadata={"replaced_at": replaced_at},
+                    metadata={
+                        "replaced_at": replaced_at,
+                        "replacement_key_hash": replacement_key_hash,
+                    },
                 )
                 if replaced is None:
                     latest = redis.get_booking(old_id)
                     return _respond(self, 409, {"error": "This booking has already started or changed and can no longer be edited", "status": latest.get("status") if latest else "not_found"})
-            replacement, published = _create_booking(new_payload, idempotency_key)
+            elif previous_status == "replaced":
+                stored_key_hash = previous.get("replacement_key_hash", "")
+                if not isinstance(stored_key_hash, str) or not hmac.compare_digest(stored_key_hash, replacement_key_hash):
+                    return _respond(self, 409, {"error": "This booking has already been replaced by another edit", "status": previous_status})
+            else:
+                return _respond(self, 409, {"error": "This booking is cancelled or can no longer be edited", "status": previous_status})
+            replacement, published = _create_booking(
+                new_payload,
+                idempotency_key,
+                prepared_booking=prepared_booking,
+            )
             status = 201 if published else (202 if replacement["status"] == "scheduling" else 200)
             return _respond(self, status, {"status": replacement["status"], "booking": replacement, "replaced_booking_id": old_id, "qstash_published": published})
         except PermissionError as error:
