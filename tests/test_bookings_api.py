@@ -384,10 +384,10 @@ def test_patch_does_not_resurrect_cancelled_booking(monkeypatch):
         def get_booking(self, booking_id):
             return dict(previous)
 
-    monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     def fail_if_cancelled(*args, **kwargs):
         pytest.fail("cancelled bookings must stay terminal")
 
+    monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(bookings_api, "_create_booking", fail_if_cancelled)
 
     request = FakeHandler(_patch_payload())
