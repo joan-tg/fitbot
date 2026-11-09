@@ -515,6 +515,7 @@ class handler(BaseHTTPRequestHandler):
                 "error_code",
                 "cancelled_at",
                 "replaced_at",
+                "missed_at",
             )
             bookings = [
                 {field: record[field] for field in fields if field in record}
