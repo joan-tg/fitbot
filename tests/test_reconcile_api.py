@@ -133,9 +133,7 @@ def test_schedule_failed_is_republished_only_after_recovery_delay(monkeypatch):
     monkeypatch.setattr(
         reconcile_api,
         "_publish_booking",
-        lambda item, store: (
-            calls.append(item["id"]) or (item, True)
-        ),
+        lambda item, store: (calls.append(item["id"]) or (item, True)),
     )
 
     counts = reconcile_api._reconcile(redis, [record], NOW, TZ, 30, True)
