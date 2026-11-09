@@ -9,7 +9,7 @@
     dry_run:"Simulación completada", processing:"En proceso",
     booking_confirmed:"Reserva confirmada", already_booked:"Ya reservada",
     booking_failed:"Error de reserva", schedule_failed:"Error al programar",
-    outcome_unconfirmed:"Resultado sin confirmar", cancelled:"Cancelada"
+    outcome_unconfirmed:"Resultado sin confirmar", cancelled:"Cancelada", replaced:"Sustituida"
   }[status] || status || "Desconocido");
   const dateTime = (value, withTime = true) => {
     if (!value) return "—";
@@ -64,8 +64,9 @@
   }
   function renderBookings() {
     const rows=$("booking-rows");
-    if (!state.bookings.length) { rows.innerHTML='<tr><td colspan="6" class="empty-state">Todavía no hay reservas programadas.</td></tr>'; return; }
-    rows.innerHTML=state.bookings.map(b=>`<tr>
+    const visibleBookings=state.bookings.filter(b=>b.status!=="replaced");
+    if (!visibleBookings.length) { rows.innerHTML='<tr><td colspan="6" class="empty-state">Todavía no hay reservas programadas.</td></tr>'; return; }
+    rows.innerHTML=visibleBookings.map(b=>`<tr>
       <td><span class="person-pill">${escapeHtml(personName(b.person_id))}</span></td>
       <td>${escapeHtml(b.name)}</td>
       <td>${escapeHtml(classDate(b.date,b.time))}</td>
@@ -82,7 +83,7 @@
       time:r.recorded_at || r.updated_at || r.created_at,
       status:r.status || r.result
     }));
-    if (!entries.length) state.bookings.slice(0,8).forEach(b=>entries.push({
+    if (!entries.length) state.bookings.filter(b=>b.status!=="replaced").slice(0,8).forEach(b=>entries.push({
       title:statusName(b.status)+" · "+(b.name||"Reserva"),
       sub:personName(b.person_id)+" · "+classDate(b.date,b.time),
       time:b.updated_at||b.created_at,status:b.status
@@ -153,7 +154,7 @@
       $("schedule-button").textContent="Guardar cambios →";
       $("stop-editing").hidden=false;
       $("booking-error").textContent="";
-      $("booking-success").textContent="Editando la programación seleccionada. La anterior se cancelará al guardar."; 
+      $("booking-success").textContent="Editando la programación seleccionada. La anterior quedará como sustituida al guardar."; 
       $("booking-form").scrollIntoView({behavior:"smooth",block:"center"});
       return;
     }
