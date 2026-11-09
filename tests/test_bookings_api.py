@@ -194,7 +194,7 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
         f"fitbot-booking:{stored['id']}".encode("utf-8")
     ).hexdigest()
     assert calls["headers"]["Upstash-Deduplication-Id"] == expected_deduplication_id
-    assert calls["headers"]["Upstash-Retries"] == "5"
+    assert calls["headers"]["Upstash-Retries"] == "6"
     assert calls["headers"]["Upstash-Retry-Delay"] == "60000 * (1 + retried)"
     assert (
         calls["headers"]["Upstash-Forward-x-vercel-protection-bypass"]
