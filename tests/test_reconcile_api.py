@@ -130,11 +130,12 @@ def test_schedule_failed_is_republished_only_after_recovery_delay(monkeypatch):
     record = booking("schedule_failed", NOW - timedelta(minutes=2))
     redis = FakeRedis([record])
     calls = []
-    monkeypatch.setattr(
-        reconcile_api,
-        "_publish_booking",
-        lambda item, store: calls.append(item["id"]) or (item, True),
-    )
+
+    def fake_publish(item, store):
+        calls.append(item["id"])
+        return item, True
+
+    monkeypatch.setattr(reconcile_api, "_publish_booking", fake_publish)
 
     counts = reconcile_api._reconcile(redis, [record], NOW, TZ, 30, True)
 
