@@ -5,9 +5,12 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from qstash import Receiver
 
 from api.bookings import (
     SCHEDULING_RECOVERY_SECONDS,
@@ -34,17 +37,40 @@ def _respond(handler, status, payload):
 
 def _authorized(handler):
     supplied = handler.headers.get("Authorization", "")
-    if not supplied.startswith("Bearer "):
+    expected = os.environ.get("FITBOT_ADMIN_TOKEN", "")
+    return bool(
+        expected
+        and supplied.startswith("Bearer ")
+        and hmac.compare_digest(supplied[7:], expected)
+    )
+
+
+def _verify_qstash(handler, raw_body):
+    current_key = os.environ.get("QSTASH_CURRENT_SIGNING_KEY")
+    next_key = os.environ.get("QSTASH_NEXT_SIGNING_KEY")
+    host = handler.headers.get("x-forwarded-host") or handler.headers.get("host")
+    signature = handler.headers.get("Upstash-Signature")
+    if not current_key or not next_key or not host or not signature:
         return False
-    token = supplied[7:]
-    expected_tokens = (
-        os.environ.get("CRON_SECRET", ""),
-        os.environ.get("FITBOT_ADMIN_TOKEN", ""),
+
+    proto = handler.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
+    if proto != "https":
+        return False
+    destination = f"https://{host}{urlsplit(handler.path).path}"
+    receiver = Receiver(
+        current_signing_key=current_key,
+        next_signing_key=next_key,
     )
-    return any(
-        expected and hmac.compare_digest(token, expected)
-        for expected in expected_tokens
-    )
+    try:
+        receiver.verify(
+            body=raw_body.decode("utf-8"),
+            signature=signature,
+            url=destination,
+        )
+        return True
+    except Exception:
+        logger.warning("Rejected reconciliation request with invalid QStash signature")
+        return False
 
 
 def _aware_timestamp(record, field="updated_at"):
@@ -254,9 +280,7 @@ def _reconcile(redis, records, now, timezone, window_minutes, dry_run):
 
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if not _authorized(self):
-            return _respond(self, 401, {"error": "Unauthorized"})
+    def _run(self):
         if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
             return _respond(
                 self,
@@ -288,3 +312,27 @@ class handler(BaseHTTPRequestHandler):
         except Exception:
             logger.exception("Unexpected reconciliation failure")
             return _respond(self, 503, {"error": "Reconciliation unavailable"})
+
+    def do_GET(self):
+        # Manual invocation for a maintainer; scheduled runs use signed QStash POSTs.
+        if not _authorized(self):
+            return _respond(self, 401, {"error": "Unauthorized"})
+        return self._run()
+
+    def do_POST(self):
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return _respond(self, 400, {"error": "Invalid Content-Length"})
+        if length <= 0 or length > 16_384:
+            return _respond(self, 413, {"error": "Invalid request body size"})
+        raw_body = self.rfile.read(length)
+        if not _verify_qstash(self, raw_body):
+            return _respond(self, 401, {"error": "Invalid QStash signature"})
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return _respond(self, 400, {"error": "Invalid JSON body"})
+        if payload != {"task": "reconcile"}:
+            return _respond(self, 400, {"error": "Invalid reconciliation task"})
+        return self._run()
