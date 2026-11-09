@@ -394,20 +394,23 @@ class handler(BaseHTTPRequestHandler):
             if booking is None:
                 return _respond(self, 404, {"error": "Booking not found"})
             if booking.get("status") == "cancelled":
-                return _respond(self, 200, {"status": "cancelled", "booking": booking})
+                return _respond(
+                    self, 200, {"status": "cancelled", "booking": booking}
+                )
             cancellable = [
                 "pending_schedule",
                 "schedule_failed",
                 "scheduling",
                 "scheduled",
             ]
+            cancelled_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(
+                timespec="seconds"
+            )
             cancelled = redis.update_booking_status(
                 booking_id,
                 "cancelled",
                 expected_statuses=cancellable,
-                metadata={"cancelled_at": datetime.now(
-                    ZoneInfo("Europe/Madrid")
-                ).isoformat(timespec="seconds")},
+                metadata={"cancelled_at": cancelled_at},
             )
             if cancelled is None:
                 latest = redis.get_booking(booking_id)
