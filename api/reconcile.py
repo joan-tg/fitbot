@@ -163,7 +163,9 @@ def _reconcile(redis, records, now, timezone, window_minutes, dry_run):
                     metadata={"error_code": "stale_processing_recovered"},
                 )
             except (RedisUnavailable, KeyError):
-                logger.exception("Could not recover processing booking %s", booking["id"])
+                logger.exception(
+                    "Could not recover processing booking %s", booking["id"]
+                )
                 counts["errors"] += 1
                 continue
             if updated is None:
