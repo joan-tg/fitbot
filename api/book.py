@@ -176,14 +176,15 @@ class handler(BaseHTTPRequestHandler):
         # inspecting stale processing records so recovery uses the same namespace.
         is_preview = os.environ.get("VERCEL_ENV") == "preview"
         dry_run = is_preview or os.environ.get("DRY_RUN", "true").lower() != "false"
-        if status == "scheduling":
-            # A valid QStash delivery proves publication succeeded. Recover the
-            # intermediate state left behind if QStash accepted the message but
-            # the API could not persist its message ID/status in Redis.
+        if status in ("scheduling", "schedule_failed"):
+            # A valid signed QStash delivery proves that publication succeeded,
+            # even if the publishing request previously timed out or Redis could
+            # not persist the acknowledgement.
+            previous_status = status
             recovered = redis.update_booking_status(
                 booking_id,
                 "scheduled",
-                expected_statuses=["scheduling"],
+                expected_statuses=[previous_status],
                 metadata={
                     "scheduled_at": booking.get("opens_at"),
                     "error_code": None,
@@ -206,8 +207,9 @@ class handler(BaseHTTPRequestHandler):
                     {"status": "duplicate_ignored", "booking_id": booking_id},
                 )
             logger.warning(
-                "Recovered booking %s from scheduling after QStash delivery",
+                "Recovered booking %s from %s after QStash delivery",
                 booking_id,
+                previous_status,
             )
 
         if status == "processing":
@@ -223,8 +225,12 @@ class handler(BaseHTTPRequestHandler):
                 )
             return _response(
                 self,
-                200,
-                {"status": "duplicate_ignored", "booking_id": booking_id},
+                503,
+                {
+                    "status": "execution_in_progress",
+                    "booking_id": booking_id,
+                },
+                headers={"Retry-After": "60"},
             )
         if status != "scheduled":
             return _response(
@@ -321,10 +327,17 @@ class handler(BaseHTTPRequestHandler):
             booking, dry_run=dry_run, ttl_seconds=PROCESSING_LOCK_TTL
         )
         if not lock_token:
+            # A lock may belong to a concurrent delivery or to an invocation
+            # that crashed after acquiring it but before claiming the booking.
+            # Ask QStash to retry instead of acknowledging and losing the task.
             return _response(
                 self,
-                200,
-                {"status": "duplicate_ignored", "booking_id": booking_id},
+                503,
+                {
+                    "status": "execution_lock_busy",
+                    "booking_id": booking_id,
+                },
+                headers={"Retry-After": "60"},
             )
 
         claimed = redis.update_booking_status(
