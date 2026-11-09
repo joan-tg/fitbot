@@ -171,6 +171,16 @@
     } catch(err) { error.textContent=err.message; }
     finally {button.disabled=false;}
   });
+  const timeSelect=$("class-time");
+  for(let minutes=7*60;minutes<=20*60+15;minutes+=15){
+    const hour=String(Math.floor(minutes/60)).padStart(2,"0");
+    const minute=String(minutes%60).padStart(2,"0");
+    const value=hour+":"+minute;
+    const option=document.createElement("option");
+    option.value=value;
+    option.textContent=value;
+    timeSelect.append(option);
+  }
   const now=new Date(); $("class-date").min=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
   if (state.token) {
     connect(state.token).catch((error)=>{showDashboard(false);$("auth-error").textContent=error.message;});
