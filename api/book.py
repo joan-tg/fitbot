@@ -236,9 +236,7 @@ class handler(BaseHTTPRequestHandler):
         timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
         now = datetime.now(timezone)
         window_minutes = int(config.get("window_minutes", 30))
-        window_state = _booking_window_state(
-            booking, timezone, now, window_minutes
-        )
+        window_state = _booking_window_state(booking, timezone, now, window_minutes)
         if window_state == "early":
             opens_at = parse_local_datetime(booking["opens_at"], timezone)
             retry_after = max(1, int((opens_at - now).total_seconds()))
