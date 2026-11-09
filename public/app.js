@@ -1,8 +1,8 @@
 (() => {
   "use strict";
-  const API = { bookings: "/api/bookings?limit=50", results: "/api/results?limit=50" };
+  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "" };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -109,6 +109,70 @@
       <td>${b.id && ["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<div class="row-actions"><button class="edit-button" type="button" data-edit-id="${escapeHtml(b.id)}">Editar</button><button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button></div>` : "—"}</td>
     </tr>`).join("");
   }
+  function calendarCategory(status) {
+    if (completedStatuses.has(status)) return "completed";
+    if (status === "cancelled") return "cancelled";
+    if (pendingStatuses.has(status)) return "pending";
+    return "incident";
+  }
+  function calendarMonthKey(year, month) {
+    return year+"-"+String(month+1).padStart(2,"0");
+  }
+  function calendarDateKey(year, month, day) {
+    return calendarMonthKey(year,month)+"-"+String(day).padStart(2,"0");
+  }
+  function renderCalendar() {
+    const year=state.calendarYear, month=state.calendarMonth;
+    const first=new Date(year,month,1);
+    const daysInMonth=new Date(year,month+1,0).getDate();
+    const mondayOffset=(first.getDay()+6)%7;
+    const totalCells=Math.ceil((mondayOffset+daysInMonth)/7)*7;
+    const monthKey=calendarMonthKey(year,month);
+    const monthLabel=new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric"}).format(first);
+    $("calendar-month-title").textContent=monthLabel.charAt(0).toLocaleUpperCase("es-ES")+monthLabel.slice(1);
+    const monthRecords=historyRecords().filter(item=>item.date && item.date.slice(0,7)===monthKey && item.status!=="replaced");
+    const byDate=new Map();
+    monthRecords.forEach(item=>{
+      if(!byDate.has(item.date)) byDate.set(item.date,[]);
+      byDate.get(item.date).push(item);
+    });
+    const today=new Date();
+    const todayKey=calendarDateKey(today.getFullYear(),today.getMonth(),today.getDate());
+    if(!state.selectedCalendarDate || state.selectedCalendarDate.slice(0,7)!==monthKey) {
+      state.selectedCalendarDate=monthKey===calendarMonthKey(today.getFullYear(),today.getMonth())?todayKey:calendarDateKey(year,month,1);
+    }
+    const cells=[];
+    for(let index=0;index<totalCells;index++){
+      const day=index-mondayOffset+1;
+      const inMonth=day>=1 && day<=daysInMonth;
+      const dateKey=inMonth?calendarDateKey(year,month,day):"";
+      const events=inMonth?(byDate.get(dateKey)||[]):[];
+      const count=events.length;
+      const classes=["calendar-day"];
+      if(!inMonth) classes.push("is-outside");
+      if(dateKey===todayKey) classes.push("is-today");
+      if(dateKey===state.selectedCalendarDate) classes.push("is-selected");
+      const preview=events.slice(0,2).map(item=>'<span class="calendar-event '+calendarCategory(item.status)+'">'+escapeHtml(item.time||"—")+' · '+escapeHtml(personName(item.person_id))+'</span>').join("");
+      const more=count>2?'<span class="calendar-more">+'+(count-2)+' más</span>':"";
+      cells.push('<button class="'+classes.join(" ")+'" type="button" data-calendar-date="'+dateKey+'" '+(!inMonth?'disabled':'')+' aria-label="'+(inMonth?escapeHtml(day+" de "+monthLabel+", "+count+" clases"):"")+'" aria-pressed="'+(dateKey===state.selectedCalendarDate)+'"><span class="calendar-day-number">'+(inMonth?day:"")+'</span>'+preview+more+'</button>');
+    }
+    $("calendar-grid").innerHTML=cells.join("");
+    const selected=(byDate.get(state.selectedCalendarDate)||[]).sort((a,b)=>String(a.time||"").localeCompare(String(b.time||"")));
+    const selectedDate=state.selectedCalendarDate?new Date(state.selectedCalendarDate+"T12:00:00") : first;
+    $("calendar-selected-title").textContent=new Intl.DateTimeFormat("es-ES",{weekday:"long",day:"numeric",month:"long"}).format(selectedDate);
+    $("calendar-day-count").textContent=selected.length?selected.length+" clase"+(selected.length===1?"":"s"):"Sin clases";
+    if(!selected.length) {
+      $("calendar-day-events").innerHTML='<div class="empty-state">No hay clases registradas para este día.</div>';
+      return;
+    }
+    $("calendar-day-events").innerHTML=selected.map(item=>'<article class="calendar-event-card"><div class="calendar-event-time">'+escapeHtml(item.time||"—")+'</div><div class="calendar-event-copy"><strong>'+escapeHtml(item.name||"Clase")+'</strong><small>'+escapeHtml(personName(item.person_id))+'</small></div><span class="status-pill '+statusClass(item.status)+'">'+escapeHtml(statusName(item.status))+'</span></article>').join("");
+  }
+  function setCalendarMonth(year,month) {
+    const date=new Date(year,month,1);
+    state.calendarYear=date.getFullYear();state.calendarMonth=date.getMonth();
+    state.selectedCalendarDate=null;
+    renderCalendar();
+  }
   function renderActivity() {
     const entries=[];
     state.results.slice(0,8).forEach(r=>entries.push({
@@ -136,7 +200,7 @@
     ]);
     state.bookings=bookingData.bookings||[];
     state.results=resultData.results||[];
-    renderStats(); renderBookings(); renderActivity();
+    renderStats(); renderBookings(); renderActivity(); renderCalendar();
     $("last-updated").textContent="Actualizado "+new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
   }
   $("auth-form").addEventListener("submit",async(event)=>{
@@ -156,6 +220,26 @@
   }
   $("refresh-button").addEventListener("click",refresh);
   $("refresh-inline").addEventListener("click",refresh);
+  $("show-calendar").addEventListener("click",()=>{
+    $("calendar-panel").hidden=false;$("history-panel").hidden=true;
+    $("show-calendar").classList.add("is-active");$("show-history").classList.remove("is-active");
+    $("show-calendar").setAttribute("aria-pressed","true");$("show-history").setAttribute("aria-pressed","false");
+    renderCalendar();
+  });
+  $("show-history").addEventListener("click",()=>{
+    $("calendar-panel").hidden=true;$("history-panel").hidden=false;
+    $("show-history").classList.add("is-active");$("show-calendar").classList.remove("is-active");
+    $("show-history").setAttribute("aria-pressed","true");$("show-calendar").setAttribute("aria-pressed","false");
+  });
+  $("calendar-prev").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth-1));
+  $("calendar-next").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth+1));
+  $("calendar-today").addEventListener("click",()=>setCalendarMonth(new Date().getFullYear(),new Date().getMonth()));
+  $("calendar-grid").addEventListener("click",event=>{
+    const day=event.target.closest("[data-calendar-date]");
+    if(!day || !day.dataset.calendarDate) return;
+    state.selectedCalendarDate=day.dataset.calendarDate;
+    renderCalendar();
+  });
   $("history-person").addEventListener("change",event=>{state.historyPerson=event.target.value;renderBookings();});
   $("history-status").addEventListener("change",event=>{state.historyStatus=event.target.value;renderBookings();});
   $("history-from").addEventListener("change",event=>{state.historyFrom=event.target.value;renderBookings();});
