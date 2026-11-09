@@ -38,6 +38,7 @@ class UpstashRedis:
         "message_id",
         "scheduled_at",
         "cancelled_at",
+        "replaced_at",
         "error_code",
     }
 
