@@ -405,10 +405,7 @@ class handler(BaseHTTPRequestHandler):
                 stored_key_hash = previous.get("replacement_key_hash", "")
                 replacement_key_matches = (
                     isinstance(stored_key_hash, str)
-                    and hmac.compare_digest(
-                        stored_key_hash,
-                        replacement_key_hash,
-                    )
+                    and hmac.compare_digest(stored_key_hash, replacement_key_hash)
                 )
                 if not replacement_key_matches:
                     return _respond(
