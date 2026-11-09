@@ -2,7 +2,7 @@
   "use strict";
   const API = { bookings: "/api/bookings?limit=50", results: "/api/results?limit=50" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "" };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -62,17 +62,51 @@
     $("stat-dry-run").textContent=counts.dry_run||0;
     $("stat-errors").textContent=(counts.schedule_failed||0)+(counts.booking_failed||0)+(counts.outcome_unconfirmed||0);
   }
+  const completedStatuses = new Set(["dry_run","booking_confirmed","already_booked"]);
+  const incidentStatuses = new Set(["booking_failed","schedule_failed","outcome_unconfirmed","incorrect_credentials","class_not_found"]);
+  const pendingStatuses = new Set(["scheduled","pending_schedule","scheduling","processing"]);
+  function historyCategory(status) {
+    if (completedStatuses.has(status)) return "completed";
+    if (status === "cancelled") return "cancelled";
+    if (pendingStatuses.has(status)) return "pending";
+    return "incident";
+  }
+  function historyRecords() {
+    const resultById = new Map();
+    state.results.forEach(result => {
+      if (result.booking_id && !resultById.has(result.booking_id)) resultById.set(result.booking_id,result);
+    });
+    const records = state.bookings.filter(b=>b.status!=="replaced").map(b=>{
+      const result=resultById.get(b.id);
+      return {...b,...(result||{}),id:b.id,status:result?.status||b.status,name:b.name||result?.class||result?.name||"Reserva",date:b.date||result?.date,time:b.time||result?.time,person_id:b.person_id||result?.person_id,recorded_at:result?.recorded_at||b.updated_at||b.created_at};
+    });
+    const knownIds = new Set(records.map(item=>item.id));
+    state.results.filter(r=>!r.booking_id || !knownIds.has(r.booking_id)).forEach((r,index)=>{
+      records.push({...r,id:r.booking_id||("legacy-"+(r.recorded_at||index)),name:r.class||r.name||"Reserva",status:r.status||r.result});
+    });
+    return records.sort((a,b)=>String((b.date||"")+"T"+(b.time||"")).localeCompare(String((a.date||"")+"T"+(a.time||""))));
+  }
   function renderBookings() {
     const rows=$("booking-rows");
-    const visibleBookings=state.bookings.filter(b=>b.status!=="replaced");
-    if (!visibleBookings.length) { rows.innerHTML='<tr><td colspan="6" class="empty-state">Todavía no hay reservas programadas.</td></tr>'; return; }
-    rows.innerHTML=visibleBookings.map(b=>`<tr>
+    const all=historyRecords();
+    const filtered=all.filter(b=>{
+      if(state.historyPerson!=="all" && b.person_id!==state.historyPerson) return false;
+      const category=historyCategory(b.status);
+      if(state.historyStatus!=="all" && category!==state.historyStatus) return false;
+      const date=b.date||"";
+      if(state.historyFrom && (!date || date<state.historyFrom)) return false;
+      if(state.historyTo && (!date || date>state.historyTo)) return false;
+      return true;
+    });
+    $("history-count").textContent="Mostrando "+filtered.length+" de "+all.length;
+    if (!filtered.length) { rows.innerHTML='<tr><td colspan="6" class="empty-state">No hay reservas que coincidan con estos filtros.</td></tr>'; return; }
+    rows.innerHTML=filtered.map(b=>`<tr>
       <td><span class="person-pill">${escapeHtml(personName(b.person_id))}</span></td>
       <td>${escapeHtml(b.name)}</td>
       <td>${escapeHtml(classDate(b.date,b.time))}</td>
-      <td>${escapeHtml(dateTime(b.opens_at))}</td>
       <td><span class="status-pill ${statusClass(b.status)}">${escapeHtml(statusName(b.status))}</span></td>
-      <td>${["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<div class="row-actions"><button class="edit-button" type="button" data-edit-id="${escapeHtml(b.id)}">Editar</button><button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button></div>` : "—"}</td>
+      <td>${escapeHtml(dateTime(b.recorded_at||b.updated_at||b.created_at))}</td>
+      <td>${b.id && ["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<div class="row-actions"><button class="edit-button" type="button" data-edit-id="${escapeHtml(b.id)}">Editar</button><button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button></div>` : "—"}</td>
     </tr>`).join("");
   }
   function renderActivity() {
@@ -122,6 +156,15 @@
   }
   $("refresh-button").addEventListener("click",refresh);
   $("refresh-inline").addEventListener("click",refresh);
+  $("history-person").addEventListener("change",event=>{state.historyPerson=event.target.value;renderBookings();});
+  $("history-status").addEventListener("change",event=>{state.historyStatus=event.target.value;renderBookings();});
+  $("history-from").addEventListener("change",event=>{state.historyFrom=event.target.value;renderBookings();});
+  $("history-to").addEventListener("change",event=>{state.historyTo=event.target.value;renderBookings();});
+  $("history-clear").addEventListener("click",()=>{
+    state.historyPerson="all";state.historyStatus="all";state.historyFrom="";state.historyTo="";
+    $("history-person").value="all";$("history-status").value="all";$("history-from").value="";$("history-to").value="";
+    renderBookings();
+  });
   async function cancelBooking(button, bookingId) {
     try {
       await request("/api/bookings?id="+encodeURIComponent(bookingId),{method:"DELETE"});
