@@ -344,10 +344,19 @@ class handler(BaseHTTPRequestHandler):
             if previous is None:
                 return _respond(self, 404, {"error": "Booking not found"})
             allowed = ["pending_schedule", "schedule_failed", "scheduling", "scheduled"]
-            if previous.get("status") != "cancelled":
-                cancelled_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
-                cancelled = redis.update_booking_status(old_id, "cancelled", expected_statuses=allowed, metadata={"cancelled_at": cancelled_at})
-                if cancelled is None:
+            # A retry after a transient QStash failure may arrive after the old
+            # record has already been marked replaced. In that case, reuse the
+            # same idempotency key to recover the replacement without changing
+            # the old record again.
+            if previous.get("status") not in ("cancelled", "replaced"):
+                replaced_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
+                replaced = redis.update_booking_status(
+                    old_id,
+                    "replaced",
+                    expected_statuses=allowed,
+                    metadata={"replaced_at": replaced_at},
+                )
+                if replaced is None:
                     latest = redis.get_booking(old_id)
                     return _respond(self, 409, {"error": "This booking has already started or changed and can no longer be edited", "status": latest.get("status") if latest else "not_found"})
             replacement, published = _create_booking(new_payload, idempotency_key)
@@ -359,7 +368,7 @@ class handler(BaseHTTPRequestHandler):
             return _respond(self, 400, {"error": str(error)})
         except requests.RequestException:
             logger.exception("Could not publish replacement booking to QStash")
-            return _respond(self, 502, {"error": "Old schedule cancelled, but QStash scheduling failed. Retry the same request."})
+            return _respond(self, 502, {"error": "Old schedule was marked as replaced, but QStash scheduling failed. Retry the same request."})
         except RedisUnavailable:
             logger.exception("Redis booking store unavailable during replacement")
             return _respond(self, 503, {"error": "Booking store unavailable"})
@@ -409,6 +418,7 @@ class handler(BaseHTTPRequestHandler):
                 "scheduled_at",
                 "error_code",
                 "cancelled_at",
+                "replaced_at",
             )
             bookings = [
                 {field: record[field] for field in fields if field in record}
