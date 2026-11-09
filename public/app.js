@@ -2,7 +2,7 @@
   "use strict";
   const API = { bookings: "/api/bookings?limit=50", results: "/api/results?limit=50" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [] };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -71,7 +71,7 @@
       <td>${escapeHtml(classDate(b.date,b.time))}</td>
       <td>${escapeHtml(dateTime(b.opens_at))}</td>
       <td><span class="status-pill ${statusClass(b.status)}">${escapeHtml(statusName(b.status))}</span></td>
-      <td>${["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button>` : "—"}</td>
+      <td>${["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<div class="row-actions"><button class="edit-button" type="button" data-edit-id="${escapeHtml(b.id)}">Editar</button><button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button></div>` : "—"}</td>
     </tr>`).join("");
   }
   function renderActivity() {
@@ -139,6 +139,22 @@
     }
   }
   $("booking-rows").addEventListener("click",(event)=>{
+    const editButton=event.target.closest("[data-edit-id]");
+    if(editButton){
+      const booking=state.bookings.find(item=>item.id===editButton.dataset.editId);
+      if(!booking || editButton.disabled) return;
+      state.editingBookingId=booking.id;
+      $("person").value=booking.person_id;
+      $("activity").value=booking.name;
+      $("class-date").value=booking.date;
+      $("class-time").value=booking.time;
+      $("schedule-button").textContent="Guardar cambios →";
+      $("stop-editing").hidden=false;
+      $("booking-error").textContent="";
+      $("booking-success").textContent="Editando la programación seleccionada. La anterior se cancelará al guardar."; 
+      $("booking-form").scrollIntoView({behavior:"smooth",block:"center"});
+      return;
+    }
     const button=event.target.closest("[data-cancel-id]");
     if(!button || button.disabled) return;
     const bookingId=button.dataset.cancelId;
@@ -147,6 +163,14 @@
     button.textContent="Cancelando…";
     button.setAttribute("aria-busy","true");
     void cancelBooking(button,bookingId);
+  });
+  $("stop-editing").addEventListener("click",()=>{
+    state.editingBookingId=null;
+    $("booking-form").reset();
+    $("schedule-button").textContent="Programar reserva →";
+    $("stop-editing").hidden=true;
+    $("booking-error").textContent="";
+    $("booking-success").textContent="";
   });
   $("booking-form").addEventListener("submit",async(event)=>{
     event.preventDefault();
@@ -160,13 +184,18 @@
     };
     try {
       const key="fitbot-ui-"+crypto.randomUUID();
+      const editingId=state.editingBookingId;
+      const body=editingId ? {id:editingId,...payload} : payload;
       const data=await request("/api/bookings",{
-        method:"POST",
+        method:editingId?"PATCH":"POST",
         headers:{"Content-Type":"application/json","Idempotency-Key":key},
-        body:JSON.stringify(payload)
+        body:JSON.stringify(body)
       });
-      success.textContent="Reserva programada. Apertura: "+dateTime(data.booking?.opens_at)+". Estado: "+statusName(data.status)+".";
-      toast("Automatización creada");
+      success.textContent=(editingId?"Reserva modificada. ":"Reserva programada. ")+"Apertura: "+dateTime(data.booking?.opens_at)+". Estado: "+statusName(data.status)+"."; 
+      state.editingBookingId=null;
+      button.textContent="Programar reserva →";
+      $("stop-editing").hidden=true;
+      toast(editingId?"Cambios guardados":"Automatización creada");
       await refreshAll();
     } catch(err) { error.textContent=err.message; }
     finally {button.disabled=false;}
