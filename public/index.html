@@ -109,6 +109,13 @@
           <div><div class="eyebrow">TU AGENDA</div><h2>Historial de reservas</h2></div>
           <div class="history-actions"><span id="history-count" class="muted small-text"></span><span id="last-updated" class="muted small-text"></span><button id="refresh-inline" class="outline-button" type="button">Actualizar ↻</button></div>
         </div>
+        <div class="history-filters" aria-label="Filtros del historial">
+          <div class="filter-field"><label for="history-person">Persona</label><select id="history-person"><option value="all">Todas</option><option value="person_1">Joan</option><option value="person_2">Paula</option></select></div>
+          <div class="filter-field"><label for="history-status">Estado</label><select id="history-status"><option value="all">Todos</option><option value="pending">Pendientes</option><option value="completed">Completadas</option><option value="cancelled">Canceladas</option><option value="incident">Incidencias</option></select></div>
+          <div class="filter-field"><label for="history-from">Desde</label><input id="history-from" type="date"></div>
+          <div class="filter-field"><label for="history-to">Hasta</label><input id="history-to" type="date"></div>
+          <button id="history-clear" class="outline-button filter-clear" type="button">Limpiar filtros</button>
+        </div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>PERSONA</th><th>ACTIVIDAD</th><th>CLASE</th><th>ESTADO</th><th>REGISTRADA</th><th>ACCIÓN</th></tr></thead>
