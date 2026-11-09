@@ -309,6 +309,64 @@ class handler(BaseHTTPRequestHandler):
             logger.exception("Unexpected error creating booking")
             return _respond(self, 503, {"error": "Booking scheduling unavailable"})
 
+
+    def do_PATCH(self):
+        """Replace a pending booking; the old QStash delivery becomes harmless."""
+        if not _authorized(self):
+            return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
+            return _respond(self, 403, {"error": "Vercel Preview or Production environment only"})
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return _respond(self, 400, {"error": "Invalid Content-Length"})
+        if length <= 0 or length > MAX_BODY_BYTES:
+            return _respond(self, 413, {"error": "Invalid request body size"})
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict) or set(payload) != (ALLOWED_REQUEST_FIELDS | {"id"}):
+                raise ValueError("Body must contain id, person_id, date, time and name only")
+            old_id = payload["id"]
+            if not isinstance(old_id, str) or not UpstashRedis.BOOKING_ID_PATTERN.fullmatch(old_id):
+                raise ValueError("Invalid booking id")
+            new_payload = {key: payload[key] for key in ALLOWED_REQUEST_FIELDS}
+            idempotency_key = self.headers.get("Idempotency-Key")
+            if not IDEMPOTENCY_KEY_PATTERN.fullmatch(idempotency_key or ""):
+                raise ValueError("A valid Idempotency-Key header is required")
+            config = load_config(ROOT / "reservas.json")
+            _build_booking(new_payload, config)
+            if not os.environ.get("QSTASH_TOKEN") or not os.environ.get("FITBOT_WEBHOOK_URL"):
+                raise RuntimeError("QStash publishing is not configured")
+            if os.environ.get("VERCEL_ENV") == "preview" and not os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET"):
+                raise RuntimeError("Vercel Preview bypass is not configured")
+            redis = UpstashRedis()
+            previous = redis.get_booking(old_id)
+            if previous is None:
+                return _respond(self, 404, {"error": "Booking not found"})
+            allowed = ["pending_schedule", "schedule_failed", "scheduling", "scheduled"]
+            if previous.get("status") != "cancelled":
+                cancelled_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
+                cancelled = redis.update_booking_status(old_id, "cancelled", expected_statuses=allowed, metadata={"cancelled_at": cancelled_at})
+                if cancelled is None:
+                    latest = redis.get_booking(old_id)
+                    return _respond(self, 409, {"error": "This booking has already started or changed and can no longer be edited", "status": latest.get("status") if latest else "not_found"})
+            replacement, published = _create_booking(new_payload, idempotency_key)
+            status = 201 if published else (202 if replacement["status"] == "scheduling" else 200)
+            return _respond(self, status, {"status": replacement["status"], "booking": replacement, "replaced_booking_id": old_id, "qstash_published": published})
+        except PermissionError as error:
+            return _respond(self, 403, {"error": str(error)})
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            return _respond(self, 400, {"error": str(error)})
+        except requests.RequestException:
+            logger.exception("Could not publish replacement booking to QStash")
+            return _respond(self, 502, {"error": "Old schedule cancelled, but QStash scheduling failed. Retry the same request."})
+        except RedisUnavailable:
+            logger.exception("Redis booking store unavailable during replacement")
+            return _respond(self, 503, {"error": "Booking store unavailable"})
+        except Exception:
+            logger.exception("Unexpected error replacing booking")
+            return _respond(self, 503, {"error": "Booking replacement unavailable"})
+
     def do_GET(self):
         if not _authorized(self):
             return _respond(self, 401, {"error": "Unauthorized"})
