@@ -190,11 +190,16 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
     assert calls["headers"]["Upstash-Not-Before"] == str(
         int(datetime.fromisoformat(stored["opens_at"]).timestamp())
     )
-    assert calls["headers"]["Upstash-Deduplication-Id"] == hashlib.sha256(
-        f"fitbot-booking:{stored['id']}".encode("utf-8")
-    ).hexdigest()
+    assert (
+        calls["headers"]["Upstash-Deduplication-Id"]
+        == hashlib.sha256(
+            f"fitbot-booking:{stored['id']}".encode("utf-8")
+        ).hexdigest()
+    )
     assert calls["headers"]["Upstash-Retries"] == "5"
-    assert calls["headers"]["Upstash-Retry-Delay"] == "60000 * (1 + retried)"
+    assert (
+        calls["headers"]["Upstash-Retry-Delay"] == "60000 * (1 + retried)"
+    )
     assert (
         calls["headers"]["Upstash-Forward-x-vercel-protection-bypass"]
         == "preview-bypass"
