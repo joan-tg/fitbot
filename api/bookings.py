@@ -365,5 +365,76 @@ class handler(BaseHTTPRequestHandler):
             logger.exception("Redis booking store unavailable during listing")
             return _respond(self, 503, {"error": "Booking store unavailable"})
 
+    def do_DELETE(self):
+        """Cancel a booking before its execution has started.
+
+        The QStash message is intentionally allowed to expire: the signed
+        webhook checks Redis status before claiming work and ignores cancelled
+        bookings. This avoids relying on queue deletion for the safety boundary.
+        """
+        if not _authorized(self):
+            return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
+            return _respond(
+                self,
+                403,
+                {"error": "Vercel Preview or Production environment only"},
+            )
+
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        if set(query) != {"id"} or len(query.get("id", [])) != 1:
+            return _respond(self, 400, {"error": "Provide exactly one booking id"})
+        booking_id = query["id"][0]
+        if not UpstashRedis.BOOKING_ID_PATTERN.fullmatch(booking_id):
+            return _respond(self, 400, {"error": "Invalid booking id"})
+
+        try:
+            redis = UpstashRedis()
+            booking = redis.get_booking(booking_id)
+            if booking is None:
+                return _respond(self, 404, {"error": "Booking not found"})
+            if booking.get("status") == "cancelled":
+                return _respond(self, 200, {"status": "cancelled", "booking": booking})
+            cancellable = [
+                "pending_schedule",
+                "schedule_failed",
+                "scheduling",
+                "scheduled",
+            ]
+            cancelled = redis.update_booking_status(
+                booking_id,
+                "cancelled",
+                expected_statuses=cancellable,
+                metadata={"cancelled_at": datetime.now(
+                    ZoneInfo("Europe/Madrid")
+                ).isoformat(timespec="seconds")},
+            )
+            if cancelled is None:
+                latest = redis.get_booking(booking_id)
+                if latest is None:
+                    return _respond(self, 404, {"error": "Booking not found"})
+                return _respond(
+                    self,
+                    409,
+                    {
+                        "error": "This booking can no longer be cancelled",
+                        "status": latest.get("status"),
+                    },
+                )
+            return _respond(
+                self,
+                200,
+                {
+                    "status": "cancelled",
+                    "booking": cancelled,
+                    "queue_message": "It will be ignored if QStash delivers it",
+                },
+            )
+        except KeyError:
+            return _respond(self, 404, {"error": "Booking not found"})
+        except RedisUnavailable:
+            logger.exception("Redis booking store unavailable during cancellation")
+            return _respond(self, 503, {"error": "Booking store unavailable"})
+
     def log_message(self, format, *args):
         logger.info("FitBot bookings request: " + format, *args)
