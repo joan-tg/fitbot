@@ -104,6 +104,34 @@
         </article>
       </section>
 
+      <section class="agenda-switch" aria-label="Vistas de agenda">
+        <button class="agenda-tab" id="show-calendar" type="button" aria-pressed="false">Calendario mensual</button>
+        <button class="agenda-tab is-active" id="show-history" type="button" aria-pressed="true">Historial de reservas</button>
+      </section>
+
+      <section class="panel calendar-panel" id="calendar-panel" hidden>
+        <div class="section-heading calendar-heading">
+          <div><div class="eyebrow">VISTA MENSUAL</div><h2 id="calendar-month-title">Mes</h2></div>
+          <div class="calendar-navigation">
+            <button class="outline-button" id="calendar-prev" type="button" aria-label="Mes anterior">←</button>
+            <button class="outline-button" id="calendar-today" type="button">Hoy</button>
+            <button class="outline-button" id="calendar-next" type="button" aria-label="Mes siguiente">→</button>
+          </div>
+        </div>
+        <div class="calendar-legend" aria-label="Leyenda del calendario">
+          <span><i class="legend-dot pending"></i>Programada</span>
+          <span><i class="legend-dot completed"></i>Simulada / reservada</span>
+          <span><i class="legend-dot incident"></i>Incidencia</span>
+          <span><i class="legend-dot cancelled"></i>Cancelada</span>
+        </div>
+        <div class="calendar-weekdays" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
+        <div class="calendar-grid" id="calendar-grid" aria-label="Calendario de clases"></div>
+        <section class="calendar-day-detail" aria-live="polite">
+          <div class="calendar-detail-heading"><h3 id="calendar-selected-title">Selecciona un día</h3><span id="calendar-day-count" class="muted small-text"></span></div>
+          <div id="calendar-day-events" class="calendar-events"><div class="empty-state">Selecciona un día para consultar sus clases.</div></div>
+        </section>
+      </section>
+
       <section class="panel history-panel">
         <div class="section-heading history-heading">
           <div><div class="eyebrow">TU AGENDA</div><h2>Historial de reservas</h2></div>
