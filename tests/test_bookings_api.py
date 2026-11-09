@@ -54,6 +54,10 @@ VALID_PAYLOAD = {
 }
 
 
+def fail_if_booking_action_called(*args, **kwargs):
+    pytest.fail("cancelled bookings must stay terminal")
+
+
 def test_build_booking_calculates_exact_72_hour_opening():
     booking = bookings_api._build_booking(VALID_PAYLOAD, config(), now=NOW)
 
@@ -384,11 +388,12 @@ def test_patch_does_not_resurrect_cancelled_booking(monkeypatch):
         def get_booking(self, booking_id):
             return dict(previous)
 
-    def fail_if_cancelled(*args, **kwargs):
-        pytest.fail("cancelled bookings must stay terminal")
-
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
-    monkeypatch.setattr(bookings_api, "_create_booking", fail_if_cancelled)
+    monkeypatch.setattr(
+        bookings_api,
+        "_create_booking",
+        fail_if_booking_action_called,
+    )
 
     request = FakeHandler(_patch_payload())
     response = request.patch()
