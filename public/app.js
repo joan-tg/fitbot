@@ -3,7 +3,7 @@
   const API = { bookings: "/api/bookings?limit=50", results: "/api/results?limit=50" };
   const $ = (id) => document.getElementById(id);
   const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [] };
-  const personName = (id) => id === "person_1" ? "Persona 1" : id === "person_2" ? "Persona 2" : id || "—";
+  const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
     dry_run:"Simulación completada", processing:"En proceso",
