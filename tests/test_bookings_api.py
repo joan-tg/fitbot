@@ -379,6 +379,8 @@ def test_patch_does_not_resurrect_cancelled_booking(monkeypatch):
     previous = {"id": "a" * 32, "status": "cancelled"}
 
     class FakeRedis:
+        BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+
         def get_booking(self, booking_id):
             return dict(previous)
 
@@ -386,7 +388,9 @@ def test_patch_does_not_resurrect_cancelled_booking(monkeypatch):
     monkeypatch.setattr(
         bookings_api,
         "_create_booking",
-        lambda *args, **kwargs: pytest.fail("cancelled bookings must stay terminal"),
+        lambda *args, **kwargs: pytest.fail(
+            "cancelled bookings must stay terminal"
+        ),
     )
 
     request = FakeHandler(_patch_payload())
@@ -407,7 +411,9 @@ def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatc
         def get_booking(self, booking_id):
             return dict(previous)
 
-        def update_booking_status(self, booking_id, status, expected_statuses, metadata):
+        def update_booking_status(
+            self, booking_id, status, expected_statuses, metadata
+        ):
             updates.append((booking_id, status, expected_statuses, metadata))
             previous.update(metadata)
             previous["status"] = status
