@@ -9,7 +9,7 @@
     dry_run:"Simulación completada", processing:"En proceso",
     booking_confirmed:"Reserva confirmada", already_booked:"Ya reservada",
     booking_failed:"Error de reserva", schedule_failed:"Error al programar",
-    outcome_unconfirmed:"Resultado sin confirmar", cancelled:"Cancelada", replaced:"Sustituida"
+    outcome_unconfirmed:"Resultado sin confirmar", booking_missed:"Ventana caducada", cancelled:"Cancelada", replaced:"Sustituida"
   }[status] || status || "Desconocido");
   const dateTime = (value, withTime = true) => {
     if (!value) return "—";
@@ -60,10 +60,10 @@
     const counts = state.bookings.reduce((acc,b)=>{acc[b.status]=(acc[b.status]||0)+1;return acc;},{});
     $("stat-scheduled").textContent=counts.scheduled||counts.pending_schedule||0;
     $("stat-dry-run").textContent=counts.dry_run||0;
-    $("stat-errors").textContent=(counts.schedule_failed||0)+(counts.booking_failed||0)+(counts.outcome_unconfirmed||0);
+    $("stat-errors").textContent=(counts.schedule_failed||0)+(counts.booking_failed||0)+(counts.outcome_unconfirmed||0)+(counts.booking_missed||0);
   }
   const completedStatuses = new Set(["dry_run","booking_confirmed","already_booked"]);
-  const incidentStatuses = new Set(["booking_failed","schedule_failed","outcome_unconfirmed","incorrect_credentials","class_not_found"]);
+  const incidentStatuses = new Set(["booking_failed","schedule_failed","outcome_unconfirmed","incorrect_credentials","class_not_found","booking_missed"]);
   const pendingStatuses = new Set(["scheduled","pending_schedule","scheduling","processing"]);
   function historyCategory(status) {
     if (completedStatuses.has(status)) return "completed";
@@ -104,7 +104,7 @@
       <td><span class="person-pill">${escapeHtml(personName(b.person_id))}</span></td>
       <td>${escapeHtml(b.name)}</td>
       <td>${escapeHtml(classDate(b.date,b.time))}</td>
-      <td><span class="status-pill ${statusClass(b.status)}">${escapeHtml(statusName(b.status))}</span></td>
+      <td><span class="status-pill ${statusClass(b.status)}">${escapeHtml(statusName(b.status))}</span>${b.status==="booking_missed"?'<small class="status-detail">La tarea llegó después de los 30 minutos disponibles.</small>':""}</td>
       <td>${escapeHtml(dateTime(b.recorded_at||b.updated_at||b.created_at))}</td>
       <td>${b.id && ["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<div class="row-actions"><button class="edit-button" type="button" data-edit-id="${escapeHtml(b.id)}">Editar</button><button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button></div>` : "—"}</td>
     </tr>`).join("");
@@ -165,7 +165,7 @@
       $("calendar-day-events").innerHTML='<div class="empty-state">No hay clases registradas para este día.</div>';
       return;
     }
-    $("calendar-day-events").innerHTML=selected.map(item=>'<article class="calendar-event-card"><div class="calendar-event-time">'+escapeHtml(item.time||"—")+'</div><div class="calendar-event-copy"><strong>'+escapeHtml(item.name||"Clase")+'</strong><small>'+escapeHtml(personName(item.person_id))+'</small></div><span class="status-pill '+statusClass(item.status)+'">'+escapeHtml(statusName(item.status))+'</span></article>').join("");
+    $("calendar-day-events").innerHTML=selected.map(item=>'<article class="calendar-event-card"><div class="calendar-event-time">'+escapeHtml(item.time||"—")+'</div><div class="calendar-event-copy"><strong>'+escapeHtml(item.name||"Clase")+'</strong><small>'+escapeHtml(personName(item.person_id))+'</small>'+(item.status==="booking_missed"?'<small class="status-detail">Llegó fuera de la ventana de 30 min.</small>':"")+'</div><span class="status-pill '+statusClass(item.status)+'">'+escapeHtml(statusName(item.status))+'</span></article>').join("");
   }
   function setCalendarMonth(year,month) {
     const date=new Date(year,month,1);
@@ -188,7 +188,7 @@
     }));
     if (!entries.length) { $("activity-list").innerHTML='<div class="empty-state">Aún no hay actividad registrada.</div>'; return; }
     $("activity-list").innerHTML=entries.map(e=>`<div class="activity-item">
-      <div class="activity-icon">${["dry_run","booking_confirmed","already_booked"].includes(e.status)?"✓":String(e.status||"").includes("failed")?"!":"↗"}</div>
+      <div class="activity-icon">${["dry_run","booking_confirmed","already_booked"].includes(e.status)?"✓":incidentStatuses.has(e.status)?"!":"↗"}</div>
       <div class="activity-copy"><strong>${escapeHtml(e.title)}</strong><small>${escapeHtml(e.sub||"FitBot")}</small></div>
       <time class="activity-time">${escapeHtml(dateTime(e.time))}</time>
     </div>`).join("");
