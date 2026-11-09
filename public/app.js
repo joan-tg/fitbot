@@ -54,7 +54,7 @@
     const data=await request("/api/bookings?limit=1");
     sessionStorage.setItem("fitbot_admin_token",token);
     showDashboard(true);
-    await refreshAll(data);
+    await refreshAll();
   }
   function renderStats() {
     const counts = state.bookings.reduce((acc,b)=>{acc[b.status]=(acc[b.status]||0)+1;return acc;},{});
