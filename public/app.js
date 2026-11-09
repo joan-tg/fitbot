@@ -64,13 +64,14 @@
   }
   function renderBookings() {
     const rows=$("booking-rows");
-    if (!state.bookings.length) { rows.innerHTML='<tr><td colspan="5" class="empty-state">Todavía no hay reservas programadas.</td></tr>'; return; }
+    if (!state.bookings.length) { rows.innerHTML='<tr><td colspan="6" class="empty-state">Todavía no hay reservas programadas.</td></tr>'; return; }
     rows.innerHTML=state.bookings.map(b=>`<tr>
       <td><span class="person-pill">${escapeHtml(personName(b.person_id))}</span></td>
       <td>${escapeHtml(b.name)}</td>
       <td>${escapeHtml(classDate(b.date,b.time))}</td>
       <td>${escapeHtml(dateTime(b.opens_at))}</td>
       <td><span class="status-pill ${statusClass(b.status)}">${escapeHtml(statusName(b.status))}</span></td>
+      <td>${["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button>` : "—"}</td>
     </tr>`).join("");
   }
   function renderActivity() {
@@ -120,6 +121,21 @@
   }
   $("refresh-button").addEventListener("click",refresh);
   $("refresh-inline").addEventListener("click",refresh);
+  $("booking-rows").addEventListener("click",async(event)=>{
+    const button=event.target.closest("[data-cancel-id]");
+    if(!button) return;
+    const bookingId=button.dataset.cancelId;
+    if(!confirm("¿Cancelar esta programación? Si QStash ya tiene el aviso, el webhook lo ignorará.")) return;
+    button.disabled=true;
+    try {
+      await request("/api/bookings?id="+encodeURIComponent(bookingId),{method:"DELETE"});
+      toast("Programación cancelada");
+      await refreshAll();
+    } catch(error) {
+      toast(error.message);
+      button.disabled=false;
+    }
+  });
   $("booking-form").addEventListener("submit",async(event)=>{
     event.preventDefault();
     const button=$("schedule-button"), error=$("booking-error"), success=$("booking-success");
