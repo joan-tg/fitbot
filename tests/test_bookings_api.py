@@ -331,7 +331,8 @@ def test_patch_binds_replacement_to_original_idempotency_key(monkeypatch):
         bookings_api,
         "_create_booking",
         lambda payload, key, prepared_booking=None: (
-            calls.append((payload, key, prepared_booking)) or ({"status": "scheduled"}, False)
+            calls.append((payload, key, prepared_booking))
+            or ({"status": "scheduled"}, False)
         ),
     )
 
