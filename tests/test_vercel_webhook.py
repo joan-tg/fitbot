@@ -580,6 +580,116 @@ def test_qstash_delivery_recovers_booking_left_in_scheduling(monkeypatch):
     ]
 
 
+def test_expired_dynamic_booking_is_marked_missed_and_recorded(monkeypatch):
+    import api.book as book_api
+
+    booking = _dynamic_booking()
+    booking["opens_at"] = (
+        datetime.now(ZoneInfo("Europe/Madrid")) - timedelta(minutes=31)
+    ).isoformat(timespec="seconds")
+    stored = dict(booking)
+    updates = []
+    history = []
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            assert booking_id == booking["id"]
+            return dict(stored)
+
+        def update_booking_status(
+            self, booking_id, status, expected_statuses=None, metadata=None
+        ):
+            assert booking_id == booking["id"]
+            assert status == "booking_missed"
+            assert expected_statuses == ["scheduled"]
+            updates.append((status, metadata))
+            stored.update(metadata or {})
+            stored["status"] = status
+            return dict(stored)
+
+        def record_booking_result(self, record):
+            history.append(record)
+
+        def acquire(self, *args, **kwargs):
+            pytest.fail("expired bookings must not contact AimHarder")
+
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        book_api, "run", lambda *args, **kwargs: pytest.fail("must not run")
+    )
+
+    request = FakeHandler(json.dumps({"booking_id": booking["id"]}).encode())
+    response = request.post()
+
+    assert request.status == 200
+    assert response["status"] == "booking_missed"
+    assert response["error_code"] == "execution_window_expired"
+    assert stored["status"] == "booking_missed"
+    assert stored["error_code"] == "execution_window_expired"
+    assert stored["missed_at"] == response["missed_at"]
+    assert updates == [
+        (
+            "booking_missed",
+            {
+                "missed_at": response["missed_at"],
+                "error_code": "execution_window_expired",
+            },
+        )
+    ]
+    assert history == [
+        {
+            "booking_id": booking["id"],
+            "person_id": booking["person_id"],
+            "date": booking["date"],
+            "time": booking["time"],
+            "class": booking["name"],
+            "status": "booking_missed",
+            "dry_run": True,
+            "error_code": "execution_window_expired",
+        }
+    ]
+
+
+def test_early_dynamic_booking_remains_scheduled_for_qstash_retry(monkeypatch):
+    import api.book as book_api
+
+    booking = _dynamic_booking()
+    booking["opens_at"] = (
+        datetime.now(ZoneInfo("Europe/Madrid")) + timedelta(minutes=5)
+    ).isoformat(timespec="seconds")
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(booking)
+
+        def update_booking_status(self, *args, **kwargs):
+            pytest.fail("early deliveries must not change booking status")
+
+        def record_booking_result(self, record):
+            pytest.fail("early deliveries are not incidents")
+
+        def acquire(self, *args, **kwargs):
+            pytest.fail("early deliveries must not contact AimHarder")
+
+    monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
+    monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
+    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        book_api, "run", lambda *args, **kwargs: pytest.fail("must not run")
+    )
+
+    request = FakeHandler(json.dumps({"booking_id": booking["id"]}).encode())
+    response = request.post()
+
+    assert request.status == 503
+    assert response["status"] == "not_yet_open"
+    assert int(request.response_headers["Retry-After"]) > 0
+
+
 def test_dynamic_cancelled_booking_never_contacts_aimharder(monkeypatch):
     import api.book as book_api
 
