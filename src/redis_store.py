@@ -39,6 +39,7 @@ class UpstashRedis:
         "scheduled_at",
         "cancelled_at",
         "replaced_at",
+        "missed_at",
         "replacement_key_hash",
         "error_code",
     }
