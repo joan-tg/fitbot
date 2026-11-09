@@ -64,3 +64,6 @@
  .calendar-legend{gap:9px;font-size:9px}
  .calendar-event-card{gap:8px;padding:9px 8px}.calendar-event-card .status-pill{font-size:8px;padding:4px 5px}
 }
+
+.status-booking_missed{background:#432b32;color:var(--red)}
+.status-detail{display:block;color:#e6a1a8;font-size:9px;line-height:1.35;margin-top:4px;white-space:normal;max-width:230px}
