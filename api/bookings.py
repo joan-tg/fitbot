@@ -336,11 +336,9 @@ class handler(BaseHTTPRequestHandler):
                     "Body must contain id, person_id, date, time and name only"
                 )
             old_id = payload["id"]
-            valid_booking_id = (
-                isinstance(old_id, str)
-                and UpstashRedis.BOOKING_ID_PATTERN.fullmatch(old_id)
-            )
-            if not valid_booking_id:
+            if not isinstance(old_id, str):
+                raise ValueError("Invalid booking id")
+            if not UpstashRedis.BOOKING_ID_PATTERN.fullmatch(old_id):
                 raise ValueError("Invalid booking id")
 
             new_payload = {key: payload[key] for key in ALLOWED_REQUEST_FIELDS}
