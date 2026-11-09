@@ -51,7 +51,7 @@ def booking(status, updated_at=None, opens_at=None, booking_id=None):
         "opens_at": opens_at or (NOW + timedelta(hours=2)).isoformat(),
         "status": status,
         "created_at": (NOW - timedelta(minutes=10)).isoformat(),
-        "updated_at": updated_at or (NOW - timedelta(minutes=10)).isoformat(),
+        "updated_at": (updated_at or (NOW - timedelta(minutes=10))).isoformat(),
     }
 
 
@@ -67,15 +67,11 @@ def test_stale_scheduling_record_is_republished_once(monkeypatch):
         return dict(item, status="scheduled"), True
 
     monkeypatch.setattr(reconcile_api, "_publish_booking", fake_publish)
-    counts = reconcile_api._reconcile(
-        redis, [record], NOW, TZ, 30, True
-    )
+    counts = reconcile_api._reconcile(redis, [record], NOW, TZ, 30, True)
 
     assert counts["republished"] == 1
     assert published == [record["id"]]
-    assert redis.updates == [
-        (record["id"], "schedule_failed", ["scheduling"])
-    ]
+    assert redis.updates == [(record["id"], "schedule_failed", ["scheduling"])]
 
 
 def test_recent_scheduling_record_is_left_alone(monkeypatch):
@@ -143,9 +139,18 @@ def test_schedule_failed_is_republished_only_after_recovery_delay(monkeypatch):
 
 
 class FakeHandler:
-    def __init__(self, token="admin-token"):
-        self.headers = {"Authorization": f"Bearer {token}"}
-        self.wfile = __import__("io").BytesIO()
+    def __init__(self, token="admin-token", payload=None):
+        import io
+
+        raw = json.dumps(payload or {}).encode()
+        self.headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Length": str(len(raw)),
+            "host": "fitbot-preview.vercel.app",
+        }
+        self.rfile = io.BytesIO(raw)
+        self.wfile = io.BytesIO()
+        self.path = "/api/reconcile"
         self.status = None
 
     def send_response(self, status):
@@ -159,6 +164,10 @@ class FakeHandler:
 
     def get(self):
         reconcile_api.handler.do_GET(self)
+        return json.loads(self.wfile.getvalue())
+
+    def post(self):
+        reconcile_api.handler.do_POST(self)
         return json.loads(self.wfile.getvalue())
 
 
@@ -194,3 +203,27 @@ def test_reconcile_endpoint_rejects_unauthorized_request(monkeypatch):
 
     assert request.status == 401
     assert response["error"] == "Unauthorized"
+
+def test_reconcile_endpoint_accepts_signed_qstash_post(monkeypatch):
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    request = FakeHandler(token="not-used", payload={"task": "reconcile"})
+    monkeypatch.setattr(reconcile_api, "_verify_qstash", lambda handler, body: True)
+    monkeypatch.setattr(
+        reconcile_api,
+        "load_config",
+        lambda path: {"timezone": "Europe/Madrid", "window_minutes": 30},
+    )
+
+    class EndpointRedis(FakeRedis):
+        BOOKINGS_MAX_ITEMS = 500
+
+        def __init__(self):
+            super().__init__([])
+
+    monkeypatch.setattr(reconcile_api, "UpstashRedis", EndpointRedis)
+
+    response = request.post()
+
+    assert request.status == 200
+    assert response["status"] == "completed"
+    assert response["scanned"] == 0
