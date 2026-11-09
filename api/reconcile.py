@@ -135,9 +135,8 @@ def _reconcile(redis, records, now, timezone, window_minutes, dry_run):
     }
     candidates = sorted(
         records,
-        key=lambda item: (
-            _aware_timestamp(item) or datetime.min.replace(tzinfo=now.tzinfo)
-        ),
+        key=lambda item: _aware_timestamp(item)
+        or datetime.min.replace(tzinfo=now.tzinfo),
     )
 
     processed = 0
