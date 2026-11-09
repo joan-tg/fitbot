@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import sys
@@ -263,6 +264,10 @@ class FakeHandler:
         bookings_api.handler.do_POST(self)
         return json.loads(self.wfile.getvalue())
 
+    def patch(self):
+        bookings_api.handler.do_PATCH(self)
+        return json.loads(self.wfile.getvalue())
+
 
 def test_endpoint_requires_admin_authentication(monkeypatch):
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
@@ -284,3 +289,137 @@ def test_endpoint_rejects_missing_idempotency_key(monkeypatch):
 
     assert request.status == 400
     assert "Idempotency-Key" in response["error"]
+
+
+def _patch_payload():
+    return {
+        "id": "a" * 32,
+        "person_id": "person_1",
+        "date": "2026-11-13",
+        "time": "13:00",
+        "name": "Strength Conditioning",
+    }
+
+
+def _configure_patch_endpoint(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("QSTASH_TOKEN", "qstash-test-token")
+    monkeypatch.setenv("FITBOT_WEBHOOK_URL", "https://preview.example/api/book")
+    monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-bypass")
+    monkeypatch.setattr(bookings_api, "load_config", lambda path: config())
+
+
+def test_patch_binds_replacement_to_original_idempotency_key(monkeypatch):
+    _configure_patch_endpoint(monkeypatch)
+    original_key = "client-request-0001"
+    previous = {
+        "id": "a" * 32,
+        "status": "replaced",
+        "replacement_key_hash": hashlib.sha256(original_key.encode()).hexdigest(),
+    }
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(previous)
+
+    monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
+    calls = []
+    monkeypatch.setattr(
+        bookings_api,
+        "_create_booking",
+        lambda payload, key, prepared_booking=None: (
+            calls.append((payload, key, prepared_booking)) or ({"status": "scheduled"}, False)
+        ),
+    )
+
+    request = FakeHandler(_patch_payload(), idempotency_key=original_key)
+    response = request.patch()
+
+    assert request.status == 200
+    assert response["status"] == "scheduled"
+    assert len(calls) == 1
+    assert calls[0][1] == original_key
+    assert calls[0][2]["date"] == "2026-11-13"
+
+
+def test_patch_rejects_a_different_key_for_already_replaced_booking(monkeypatch):
+    _configure_patch_endpoint(monkeypatch)
+    previous = {
+        "id": "a" * 32,
+        "status": "replaced",
+        "replacement_key_hash": hashlib.sha256(b"original-request-0001").hexdigest(),
+    }
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(previous)
+
+    monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        bookings_api,
+        "_create_booking",
+        lambda *args, **kwargs: pytest.fail("a different edit must not be created"),
+    )
+
+    request = FakeHandler(_patch_payload(), idempotency_key="different-request-0001")
+    response = request.patch()
+
+    assert request.status == 409
+    assert response["status"] == "replaced"
+
+
+def test_patch_does_not_resurrect_cancelled_booking(monkeypatch):
+    _configure_patch_endpoint(monkeypatch)
+    previous = {"id": "a" * 32, "status": "cancelled"}
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(previous)
+
+    monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        bookings_api,
+        "_create_booking",
+        lambda *args, **kwargs: pytest.fail("cancelled bookings must stay terminal"),
+    )
+
+    request = FakeHandler(_patch_payload())
+    response = request.patch()
+
+    assert request.status == 409
+    assert response["status"] == "cancelled"
+
+
+def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatch):
+    _configure_patch_endpoint(monkeypatch)
+    previous = {"id": "a" * 32, "status": "scheduled"}
+    updates = []
+
+    class FakeRedis:
+        def get_booking(self, booking_id):
+            return dict(previous)
+
+        def update_booking_status(self, booking_id, status, expected_statuses, metadata):
+            updates.append((booking_id, status, expected_statuses, metadata))
+            previous.update(metadata)
+            previous["status"] = status
+            return dict(previous)
+
+    monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        bookings_api,
+        "_create_booking",
+        lambda payload, key, prepared_booking=None: ({"status": "scheduled"}, False),
+    )
+
+    request_key = "client-request-0001"
+    request = FakeHandler(_patch_payload(), idempotency_key=request_key)
+    response = request.patch()
+
+    assert request.status == 200
+    assert response["status"] == "scheduled"
+    assert updates[0][1] == "replaced"
+    assert updates[0][3]["replacement_key_hash"] == hashlib.sha256(
+        request_key.encode()
+    ).hexdigest()
