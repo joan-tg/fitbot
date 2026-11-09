@@ -439,6 +439,5 @@ def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatc
     assert request.status == 200
     assert response["status"] == "scheduled"
     assert updates[0][1] == "replaced"
-    assert updates[0][3]["replacement_key_hash"] == hashlib.sha256(
-        request_key.encode()
-    ).hexdigest()
+    expected_hash = hashlib.sha256(request_key.encode()).hexdigest()
+    assert updates[0][3]["replacement_key_hash"] == expected_hash
