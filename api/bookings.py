@@ -185,7 +185,7 @@ def _publish_booking(booking, redis):
         "Upstash-Deduplication-Id": hashlib.sha256(
             f"fitbot-booking:{booking['id']}".encode("utf-8")
         ).hexdigest(),
-        "Upstash-Retries": "5",
+        "Upstash-Retries": "6",
         "Upstash-Retry-Delay": "60000 * (1 + retried)",
     }
     bypass = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET")
