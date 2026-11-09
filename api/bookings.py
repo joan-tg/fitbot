@@ -396,9 +396,7 @@ class handler(BaseHTTPRequestHandler):
                                 "This booking has already started or changed "
                                 "and can no longer be edited"
                             ),
-                            "status": (
-                                latest.get("status") if latest else "not_found"
-                            ),
+                            "status": latest.get("status") if latest else "not_found",
                         },
                     )
             elif previous_status == "replaced":
