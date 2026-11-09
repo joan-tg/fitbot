@@ -259,7 +259,9 @@ def _reconcile(redis, records, now, timezone, window_minutes, dry_run):
                     metadata={"error_code": "stale_scheduling_recovered"},
                 )
             except (RedisUnavailable, KeyError):
-                logger.exception("Could not recover scheduling booking %s", booking["id"])
+                logger.exception(
+                    "Could not recover scheduling booking %s", booking["id"]
+                )
                 counts["errors"] += 1
                 continue
             if recovered is None:
