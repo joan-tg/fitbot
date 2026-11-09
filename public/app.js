@@ -121,20 +121,32 @@
   }
   $("refresh-button").addEventListener("click",refresh);
   $("refresh-inline").addEventListener("click",refresh);
-  $("booking-rows").addEventListener("click",async(event)=>{
+  async function cancelBooking(button, bookingId) {
+    try {
+      await request("/api/bookings?id="+encodeURIComponent(bookingId),{method:"DELETE"});
+      const booking=state.bookings.find(item=>item.id===bookingId);
+      if(booking) booking.status="cancelled";
+      renderStats();
+      renderBookings();
+      renderActivity();
+      toast("Programación cancelada");
+      refreshAll().catch(()=>toast("Cancelada, pero no se pudo actualizar el historial. Pulsa Actualizar."));
+    } catch(error) {
+      button.disabled=false;
+      button.removeAttribute("aria-busy");
+      button.textContent="Cancelar";
+      toast(error.message);
+    }
+  }
+  $("booking-rows").addEventListener("click",(event)=>{
     const button=event.target.closest("[data-cancel-id]");
-    if(!button) return;
+    if(!button || button.disabled) return;
     const bookingId=button.dataset.cancelId;
     if(!confirm("¿Cancelar esta programación? Si QStash ya tiene el aviso, el webhook lo ignorará.")) return;
     button.disabled=true;
-    try {
-      await request("/api/bookings?id="+encodeURIComponent(bookingId),{method:"DELETE"});
-      toast("Programación cancelada");
-      await refreshAll();
-    } catch(error) {
-      toast(error.message);
-      button.disabled=false;
-    }
+    button.textContent="Cancelando…";
+    button.setAttribute("aria-busy","true");
+    void cancelBooking(button,bookingId);
   });
   $("booking-form").addEventListener("submit",async(event)=>{
     event.preventDefault();
