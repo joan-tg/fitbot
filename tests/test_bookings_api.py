@@ -256,9 +256,7 @@ def test_stale_scheduling_record_is_recovered_and_republished_idempotently(monke
     monkeypatch.setattr(bookings_api.requests, "post", fake_post)
 
     payload = dict(VALID_PAYLOAD, date="2026-11-13")
-    result, published = bookings_api._create_booking(
-        payload, "client-request-0001"
-    )
+    result, published = bookings_api._create_booking(payload, "client-request-0001")
 
     assert published is True
     assert result["status"] == "scheduled"
