@@ -310,7 +310,6 @@ class handler(BaseHTTPRequestHandler):
             logger.exception("Unexpected error creating booking")
             return _respond(self, 503, {"error": "Booking scheduling unavailable"})
 
-
     def do_PATCH(self):
         """Replace a pending booking; the old QStash delivery becomes harmless."""
         if not _authorized(self):
