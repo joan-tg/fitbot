@@ -311,6 +311,10 @@ class handler(BaseHTTPRequestHandler):
                 window_minutes,
                 dry_run,
             )
+            print(
+                "Reconciliation completed: " + json.dumps(counts, sort_keys=True),
+                flush=True,
+            )
             return _respond(self, 200, {"status": "completed", **counts})
         except RedisUnavailable:
             logger.exception("Redis unavailable during reconciliation")
