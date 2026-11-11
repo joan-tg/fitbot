@@ -139,8 +139,9 @@ def test_recent_processing_is_left_alone(monkeypatch):
     request = FakeHandler({"booking_id": booking["id"]})
     response = request.post()
 
-    assert request.status == 200
-    assert response["status"] == "duplicate_ignored"
+    assert request.status == 503
+    assert response["status"] == "execution_in_progress"
+    assert request.response_headers["Retry-After"] == "60"
     assert booking["status"] == "processing"
 
 

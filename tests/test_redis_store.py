@@ -35,6 +35,10 @@ class FakeSession:
         return FakeResponse(next(self.results))
 
 
+def test_missed_window_timestamp_is_allowed_booking_metadata():
+    assert "missed_at" in UpstashRedis.BOOKING_METADATA_FIELDS
+
+
 def test_acquire_uses_atomic_set_nx_ex_and_returns_owner_token():
     session = FakeSession(["OK"])
     redis = UpstashRedis(

@@ -1,5 +1,6 @@
 """Protected endpoint for creating persistent, one-off booking schedules."""
 
+import hashlib
 import hmac
 import json
 import logging
@@ -26,6 +27,7 @@ IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
 ALLOWED_REQUEST_FIELDS = {"person_id", "date", "time", "name"}
 CLAIMABLE_STATUSES = ("pending_schedule", "schedule_failed")
 QSTASH_MAX_DELAY = timedelta(days=7)
+SCHEDULING_RECOVERY_SECONDS = 60
 
 
 def _respond(handler, status, payload):
@@ -178,6 +180,13 @@ def _publish_booking(booking, redis):
         "Authorization": f"Bearer {os.environ['QSTASH_TOKEN']}",
         "Content-Type": "application/json",
         "Upstash-Not-Before": str(not_before),
+        # Stable per booking: retries after an ambiguous network timeout must
+        # not enqueue another copy during QStash's 10-minute deduplication window.
+        "Upstash-Deduplication-Id": hashlib.sha256(
+            f"fitbot-booking:{booking['id']}".encode("utf-8")
+        ).hexdigest(),
+        "Upstash-Retries": "6",
+        "Upstash-Retry-Delay": "60000 * (1 + retried)",
     }
     bypass = os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET")
     if bypass:
@@ -225,7 +234,7 @@ def _publish_booking(booking, redis):
     return scheduled, True
 
 
-def _create_booking(payload, idempotency_key):
+def _create_booking(payload, idempotency_key, prepared_booking=None):
     deployment_env = os.environ.get("VERCEL_ENV")
     if deployment_env not in ("preview", "production"):
         raise PermissionError(
@@ -235,7 +244,7 @@ def _create_booking(payload, idempotency_key):
         raise ValueError("A valid Idempotency-Key header is required")
 
     config = load_config(ROOT / "reservas.json")
-    booking = _build_booking(payload, config)
+    booking = prepared_booking or _build_booking(payload, config)
 
     qstash_token = os.environ.get("QSTASH_TOKEN")
     webhook_url = os.environ.get("FITBOT_WEBHOOK_URL")
@@ -253,6 +262,36 @@ def _create_booking(payload, idempotency_key):
 
     if stored["status"] == "scheduled":
         return stored, False
+
+    if stored["status"] == "scheduling":
+        updated_at = stored.get("updated_at")
+        try:
+            last_update = datetime.fromisoformat(updated_at)
+            if last_update.tzinfo is None:
+                raise ValueError("updated_at must include a timezone")
+        except (TypeError, ValueError):
+            # A malformed timestamp is not sufficient evidence that the
+            # publisher is abandoned; leave it untouched for manual review.
+            return stored, False
+
+        age = datetime.now(last_update.tzinfo) - last_update
+        if age <= timedelta(seconds=SCHEDULING_RECOVERY_SECONDS):
+            return stored, False
+
+        recovered = redis.update_booking_status(
+            booking_id,
+            "schedule_failed",
+            expected_statuses=["scheduling"],
+            metadata={"error_code": "stale_scheduling_recovered"},
+        )
+        if recovered is None:
+            latest = redis.get_booking(booking_id)
+            if latest is None:
+                raise RedisUnavailable("Booking disappeared during recovery")
+            stored = latest
+        else:
+            stored = recovered
+
     if stored["status"] not in CLAIMABLE_STATUSES:
         return stored, False
 
@@ -309,6 +348,168 @@ class handler(BaseHTTPRequestHandler):
             logger.exception("Unexpected error creating booking")
             return _respond(self, 503, {"error": "Booking scheduling unavailable"})
 
+    def do_PATCH(self):
+        """Replace a pending booking; the old QStash delivery becomes harmless."""
+        if not _authorized(self):
+            return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
+            return _respond(
+                self,
+                403,
+                {"error": "Vercel Preview or Production environment only"},
+            )
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return _respond(self, 400, {"error": "Invalid Content-Length"})
+        if length <= 0 or length > MAX_BODY_BYTES:
+            return _respond(self, 413, {"error": "Invalid request body size"})
+
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(payload, dict) or set(payload) != (
+                ALLOWED_REQUEST_FIELDS | {"id"}
+            ):
+                raise ValueError(
+                    "Body must contain id, person_id, date, time and name only"
+                )
+            old_id = payload["id"]
+            if not isinstance(old_id, str):
+                raise ValueError("Invalid booking id")
+            if not UpstashRedis.BOOKING_ID_PATTERN.fullmatch(old_id):
+                raise ValueError("Invalid booking id")
+
+            new_payload = {key: payload[key] for key in ALLOWED_REQUEST_FIELDS}
+            idempotency_key = self.headers.get("Idempotency-Key")
+            if not IDEMPOTENCY_KEY_PATTERN.fullmatch(idempotency_key or ""):
+                raise ValueError("A valid Idempotency-Key header is required")
+
+            config = load_config(ROOT / "reservas.json")
+            prepared_booking = _build_booking(new_payload, config)
+            if not os.environ.get("QSTASH_TOKEN") or not os.environ.get(
+                "FITBOT_WEBHOOK_URL"
+            ):
+                raise RuntimeError("QStash publishing is not configured")
+            if os.environ.get("VERCEL_ENV") == "preview" and not os.environ.get(
+                "VERCEL_AUTOMATION_BYPASS_SECRET"
+            ):
+                raise RuntimeError("Vercel Preview bypass is not configured")
+
+            redis = UpstashRedis()
+            previous = redis.get_booking(old_id)
+            if previous is None:
+                return _respond(self, 404, {"error": "Booking not found"})
+
+            allowed = [
+                "pending_schedule",
+                "schedule_failed",
+                "scheduling",
+                "scheduled",
+            ]
+            replacement_key_hash = hashlib.sha256(
+                idempotency_key.encode("utf-8")
+            ).hexdigest()
+            previous_status = previous.get("status")
+
+            if previous_status in allowed:
+                replaced_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(
+                    timespec="seconds"
+                )
+                replaced = redis.update_booking_status(
+                    old_id,
+                    "replaced",
+                    expected_statuses=allowed,
+                    metadata={
+                        "replaced_at": replaced_at,
+                        "replacement_key_hash": replacement_key_hash,
+                    },
+                )
+                if replaced is None:
+                    latest = redis.get_booking(old_id)
+                    return _respond(
+                        self,
+                        409,
+                        {
+                            "error": (
+                                "This booking has already started or changed "
+                                "and can no longer be edited"
+                            ),
+                            "status": latest.get("status") if latest else "not_found",
+                        },
+                    )
+            elif previous_status == "replaced":
+                stored_key_hash = previous.get("replacement_key_hash", "")
+                if not isinstance(stored_key_hash, str):
+                    return _respond(
+                        self,
+                        409,
+                        {
+                            "error": "This booking has already been replaced by another edit",
+                            "status": previous_status,
+                        },
+                    )
+                if not hmac.compare_digest(stored_key_hash, replacement_key_hash):
+                    return _respond(
+                        self,
+                        409,
+                        {
+                            "error": "This booking has already been replaced by another edit",
+                            "status": previous_status,
+                        },
+                    )
+            else:
+                return _respond(
+                    self,
+                    409,
+                    {
+                        "error": "This booking is cancelled or can no longer be edited",
+                        "status": previous_status,
+                    },
+                )
+
+            replacement, published = _create_booking(
+                new_payload,
+                idempotency_key,
+                prepared_booking=prepared_booking,
+            )
+            status = (
+                201
+                if published
+                else (202 if replacement["status"] == "scheduling" else 200)
+            )
+            return _respond(
+                self,
+                status,
+                {
+                    "status": replacement["status"],
+                    "booking": replacement,
+                    "replaced_booking_id": old_id,
+                    "qstash_published": published,
+                },
+            )
+        except PermissionError as error:
+            return _respond(self, 403, {"error": str(error)})
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            return _respond(self, 400, {"error": str(error)})
+        except requests.RequestException:
+            logger.exception("Could not publish replacement booking to QStash")
+            return _respond(
+                self,
+                502,
+                {
+                    "error": (
+                        "Old schedule was marked as replaced, but QStash "
+                        "scheduling failed. Retry the same request."
+                    )
+                },
+            )
+        except RedisUnavailable:
+            logger.exception("Redis booking store unavailable during replacement")
+            return _respond(self, 503, {"error": "Booking store unavailable"})
+        except Exception:
+            logger.exception("Unexpected error replacing booking")
+            return _respond(self, 503, {"error": "Booking replacement unavailable"})
+
     def do_GET(self):
         if not _authorized(self):
             return _respond(self, 401, {"error": "Unauthorized"})
@@ -351,6 +552,8 @@ class handler(BaseHTTPRequestHandler):
                 "scheduled_at",
                 "error_code",
                 "cancelled_at",
+                "replaced_at",
+                "missed_at",
             )
             bookings = [
                 {field: record[field] for field in fields if field in record}
@@ -363,6 +566,78 @@ class handler(BaseHTTPRequestHandler):
             )
         except RedisUnavailable:
             logger.exception("Redis booking store unavailable during listing")
+            return _respond(self, 503, {"error": "Booking store unavailable"})
+
+    def do_DELETE(self):
+        """Cancel a booking before its execution has started.
+
+        The QStash message is intentionally allowed to expire: the signed
+        webhook checks Redis status before claiming work and ignores cancelled
+        bookings. This avoids relying on queue deletion for the safety boundary.
+        """
+        if not _authorized(self):
+            return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
+            return _respond(
+                self,
+                403,
+                {"error": "Vercel Preview or Production environment only"},
+            )
+
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        if set(query) != {"id"} or len(query.get("id", [])) != 1:
+            return _respond(self, 400, {"error": "Provide exactly one booking id"})
+        booking_id = query["id"][0]
+        if not UpstashRedis.BOOKING_ID_PATTERN.fullmatch(booking_id):
+            return _respond(self, 400, {"error": "Invalid booking id"})
+
+        try:
+            redis = UpstashRedis()
+            booking = redis.get_booking(booking_id)
+            if booking is None:
+                return _respond(self, 404, {"error": "Booking not found"})
+            if booking.get("status") == "cancelled":
+                return _respond(self, 200, {"status": "cancelled", "booking": booking})
+            cancellable = [
+                "pending_schedule",
+                "schedule_failed",
+                "scheduling",
+                "scheduled",
+            ]
+            cancelled_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(
+                timespec="seconds"
+            )
+            cancelled = redis.update_booking_status(
+                booking_id,
+                "cancelled",
+                expected_statuses=cancellable,
+                metadata={"cancelled_at": cancelled_at},
+            )
+            if cancelled is None:
+                latest = redis.get_booking(booking_id)
+                if latest is None:
+                    return _respond(self, 404, {"error": "Booking not found"})
+                return _respond(
+                    self,
+                    409,
+                    {
+                        "error": "This booking can no longer be cancelled",
+                        "status": latest.get("status"),
+                    },
+                )
+            return _respond(
+                self,
+                200,
+                {
+                    "status": "cancelled",
+                    "booking": cancelled,
+                    "queue_message": "It will be ignored if QStash delivers it",
+                },
+            )
+        except KeyError:
+            return _respond(self, 404, {"error": "Booking not found"})
+        except RedisUnavailable:
+            logger.exception("Redis booking store unavailable during cancellation")
             return _respond(self, 503, {"error": "Booking store unavailable"})
 
     def log_message(self, format, *args):

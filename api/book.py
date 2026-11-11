@@ -86,10 +86,19 @@ def _find_configured_booking(config, payload):
     return None
 
 
-def _is_booking_due(booking, timezone, now, window_minutes):
+def _booking_window_state(booking, timezone, now, window_minutes):
+    """Classify a delivery as early, due, or irrecoverably late."""
     opens_at = parse_local_datetime(booking["opens_at"], timezone)
     elapsed = now - opens_at
-    return timedelta(0) <= elapsed <= timedelta(minutes=window_minutes)
+    if elapsed < timedelta(0):
+        return "early"
+    if elapsed > timedelta(minutes=window_minutes):
+        return "expired"
+    return "due"
+
+
+def _is_booking_due(booking, timezone, now, window_minutes):
+    return _booking_window_state(booking, timezone, now, window_minutes) == "due"
 
 
 def _recover_stale_processing(booking, redis, dry_run, now=None):
@@ -167,14 +176,15 @@ class handler(BaseHTTPRequestHandler):
         # inspecting stale processing records so recovery uses the same namespace.
         is_preview = os.environ.get("VERCEL_ENV") == "preview"
         dry_run = is_preview or os.environ.get("DRY_RUN", "true").lower() != "false"
-        if status == "scheduling":
-            # A valid QStash delivery proves publication succeeded. Recover the
-            # intermediate state left behind if QStash accepted the message but
-            # the API could not persist its message ID/status in Redis.
+        if status in ("scheduling", "schedule_failed"):
+            # A valid signed QStash delivery proves that publication succeeded,
+            # even if the publishing request previously timed out or Redis could
+            # not persist the acknowledgement.
+            previous_status = status
             recovered = redis.update_booking_status(
                 booking_id,
                 "scheduled",
-                expected_statuses=["scheduling"],
+                expected_statuses=[previous_status],
                 metadata={
                     "scheduled_at": booking.get("opens_at"),
                     "error_code": None,
@@ -197,8 +207,9 @@ class handler(BaseHTTPRequestHandler):
                     {"status": "duplicate_ignored", "booking_id": booking_id},
                 )
             logger.warning(
-                "Recovered booking %s from scheduling after QStash delivery",
+                "Recovered booking %s from %s after QStash delivery",
                 booking_id,
+                previous_status,
             )
 
         if status == "processing":
@@ -214,8 +225,12 @@ class handler(BaseHTTPRequestHandler):
                 )
             return _response(
                 self,
-                200,
-                {"status": "duplicate_ignored", "booking_id": booking_id},
+                503,
+                {
+                    "status": "execution_in_progress",
+                    "booking_id": booking_id,
+                },
+                headers={"Retry-After": "60"},
             )
         if status != "scheduled":
             return _response(
@@ -227,15 +242,79 @@ class handler(BaseHTTPRequestHandler):
         timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
         now = datetime.now(timezone)
         window_minutes = int(config.get("window_minutes", 30))
-        if not _is_booking_due(booking, timezone, now, window_minutes):
+        window_state = _booking_window_state(booking, timezone, now, window_minutes)
+        if window_state == "early":
+            opens_at = parse_local_datetime(booking["opens_at"], timezone)
+            retry_after = max(1, int((opens_at - now).total_seconds()))
             return _response(
                 self,
-                409,
+                503,
                 {
-                    "status": "outside_window",
+                    "status": "not_yet_open",
                     "booking_id": booking_id,
                     "opens_at": booking["opens_at"],
                     "window_minutes": window_minutes,
+                },
+                headers={"Retry-After": str(retry_after)},
+            )
+        if window_state == "expired":
+            missed_at = now.isoformat(timespec="seconds")
+            missed = redis.update_booking_status(
+                booking_id,
+                "booking_missed",
+                expected_statuses=["scheduled"],
+                metadata={
+                    "missed_at": missed_at,
+                    "error_code": "execution_window_expired",
+                },
+            )
+            if missed is None:
+                current = redis.get_booking(booking_id)
+                if current and current.get("status") == "cancelled":
+                    return _response(self, 200, {"status": "cancelled_ignored"})
+                return _response(
+                    self,
+                    200,
+                    {
+                        "status": "duplicate_ignored",
+                        "booking_id": booking_id,
+                        "current_status": current.get("status") if current else None,
+                    },
+                )
+
+            try:
+                redis.record_booking_result(
+                    {
+                        "booking_id": booking_id,
+                        "person_id": booking["person_id"],
+                        "date": booking["date"],
+                        "time": booking["time"],
+                        "class": booking["name"],
+                        "status": "booking_missed",
+                        "dry_run": dry_run,
+                        "error_code": "execution_window_expired",
+                    }
+                )
+            except RedisUnavailable:
+                logger.exception(
+                    "Could not save missed-window history for booking %s",
+                    booking_id,
+                )
+            logger.warning(
+                "Booking %s missed its %s-minute execution window",
+                booking_id,
+                window_minutes,
+            )
+            return _response(
+                self,
+                200,
+                {
+                    "status": "booking_missed",
+                    "booking_id": booking_id,
+                    "opens_at": booking["opens_at"],
+                    "missed_at": missed_at,
+                    "window_minutes": window_minutes,
+                    "error_code": "execution_window_expired",
                 },
             )
 
@@ -248,10 +327,17 @@ class handler(BaseHTTPRequestHandler):
             booking, dry_run=dry_run, ttl_seconds=PROCESSING_LOCK_TTL
         )
         if not lock_token:
+            # A lock may belong to a concurrent delivery or to an invocation
+            # that crashed after acquiring it but before claiming the booking.
+            # Ask QStash to retry instead of acknowledging and losing the task.
             return _response(
                 self,
-                200,
-                {"status": "duplicate_ignored", "booking_id": booking_id},
+                503,
+                {
+                    "status": "execution_lock_busy",
+                    "booking_id": booking_id,
+                },
+                headers={"Retry-After": "60"},
             )
 
         claimed = redis.update_booking_status(
