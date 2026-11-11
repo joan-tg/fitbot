@@ -46,6 +46,17 @@ def config():
 
 
 NOW = datetime(2026, 11, 7, 12, 0, tzinfo=ZoneInfo("Europe/Madrid"))
+
+
+def _freeze_booking_build_time(monkeypatch):
+    build_booking = bookings_api._build_booking
+    monkeypatch.setattr(
+        bookings_api,
+        "_build_booking",
+        lambda payload, booking_config, now=None, booking_id=None: build_booking(
+            payload, booking_config, now=NOW, booking_id=booking_id
+        ),
+    )
 VALID_PAYLOAD = {
     "person_id": "person_1",
     "date": "2026-11-10",
@@ -135,6 +146,7 @@ def test_build_booking_uses_elapsed_utc_hours_across_dst():
 
 
 def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
+    _freeze_booking_build_time(monkeypatch)
     stored = {}
     calls = {}
 
@@ -203,6 +215,7 @@ def test_create_booking_persists_then_publishes_only_booking_id(monkeypatch):
 
 
 def test_stale_scheduling_record_is_recovered_and_republished_idempotently(monkeypatch):
+    _freeze_booking_build_time(monkeypatch)
     stored = {
         "id": "c" * 32,
         "person_id": "person_1",
@@ -273,6 +286,7 @@ def test_stale_scheduling_record_is_recovered_and_republished_idempotently(monke
 
 
 def test_idempotent_repeat_of_scheduled_booking_does_not_publish_again(monkeypatch):
+    _freeze_booking_build_time(monkeypatch)
     record = {
         "id": "a" * 32,
         "person_id": "person_1",
@@ -382,6 +396,7 @@ def _patch_payload():
 
 
 def _configure_patch_endpoint(monkeypatch):
+    _freeze_booking_build_time(monkeypatch)
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
     monkeypatch.setenv("VERCEL_ENV", "preview")
     monkeypatch.setenv("QSTASH_TOKEN", "qstash-test-token")
