@@ -57,6 +57,8 @@ def _freeze_booking_build_time(monkeypatch):
             payload, booking_config, now=NOW, booking_id=booking_id
         ),
     )
+
+
 VALID_PAYLOAD = {
     "person_id": "person_1",
     "date": "2026-11-10",
