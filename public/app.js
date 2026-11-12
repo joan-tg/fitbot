@@ -135,7 +135,7 @@
       const result=resultById.get(b.id);
       return {...b,...(result||{}),id:b.id,status:result?.status||b.status,name:b.name||result?.class||result?.name||"Reserva",date:b.date||result?.date,time:b.time||result?.time,person_id:b.person_id||result?.person_id,recorded_at:result?.recorded_at||b.updated_at||b.created_at};
     });
-    const knownIds = new Set(records.map(item=>item.id));
+    const knownIds = new Set(state.bookings.map(booking=>booking.id));
     state.results.filter(r=>!r.booking_id || !knownIds.has(r.booking_id)).forEach((r,index)=>{
       records.push({...r,id:r.booking_id||("legacy-"+(r.recorded_at||index)),name:r.class||r.name||"Reserva",status:r.status||r.result});
     });
