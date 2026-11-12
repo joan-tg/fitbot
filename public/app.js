@@ -62,6 +62,61 @@
     $("stat-dry-run").textContent=counts.dry_run||0;
     $("stat-errors").textContent=(counts.schedule_failed||0)+(counts.booking_failed||0)+(counts.outcome_unconfirmed||0)+(counts.booking_missed||0);
   }
+  const quotaPolicy = {
+    countedStatuses: new Set(["scheduled","processing","booking_confirmed","already_booked"]),
+    uncertainStatuses: new Set(["outcome_unconfirmed"]),
+    members: [
+      {id:"person_1",name:"Joan",classes:17,openBox:4},
+      {id:"person_2",name:"Paula",classes:13,openBox:4}
+    ]
+  };
+  function madridMonthKey(date=new Date()) {
+    const parts=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Madrid",year:"numeric",month:"2-digit"}).formatToParts(date);
+    const year=parts.find(part=>part.type==="year").value;
+    const month=parts.find(part=>part.type==="month").value;
+    return year+"-"+month;
+  }
+  function quotaActivityType(record) {
+    if(record.activity_type==="open_box" || record.activity_type==="class") return record.activity_type;
+    const activity=String(record.name||record.class||"").trim().toLocaleLowerCase("es");
+    return activity==="open box" ? "open_box" : "class";
+  }
+  function renderQuotaWarnings() {
+    const monthKey=madridMonthKey();
+    const monthDate=new Date(monthKey+"-01T12:00:00Z");
+    $("quota-month").textContent=new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric",timeZone:"Europe/Madrid"}).format(monthDate);
+    const records=historyRecords().filter(record=>record.date && record.date.slice(0,7)===monthKey);
+    const summaries=quotaPolicy.members.map(member=>{
+      const personRecords=records.filter(record=>record.person_id===member.id);
+      const count=(type)=>personRecords.filter(record=>
+        quotaActivityType(record)===type && quotaPolicy.countedStatuses.has(record.status)
+      ).length;
+      const uncertain=personRecords.filter(record=>quotaPolicy.uncertainStatuses.has(record.status)).length;
+      return {
+        ...member,
+        classesUsed:count("class"),
+        openBoxUsed:count("open_box"),
+        uncertain
+      };
+    });
+    const renderQuota=(label,used,limit)=>{
+      const exceeded=used>limit;
+      const reached=used===limit;
+      const status=exceeded
+        ? "Has superado la cuota: "+used+"/"+limit
+        : reached ? "Cuota alcanzada: "+used+"/"+limit : used+" de "+limit+" utilizadas";
+      return '<div class="quota-line'+(reached||exceeded?' quota-warning':'')+(exceeded?' quota-exceeded':'')+'"><span>'+label+'</span><strong>'+status+'</strong></div>';
+    };
+    $("quota-summary").innerHTML=summaries.map(member=>{
+      const alerts=[];
+      if(member.uncertain) alerts.push(member.uncertain+" resultado"+(member.uncertain===1?" incierto":"s inciertos")+" sin confirmar; no se incluye"+(member.uncertain===1?"":"n")+" en el cómputo.");
+      return '<article class="quota-person"><h3>'+member.name+'</h3>'+
+        renderQuota("Clases",member.classesUsed,member.classes)+
+        renderQuota("Open Box",member.openBoxUsed,member.openBox)+
+        (alerts.length?'<p class="quota-uncertain">'+alerts.join(" ")+' Conviene revisarlo antes de asumir que no consume cuota.</p>':'')+
+        '</article>';
+    }).join("");
+  }
   const completedStatuses = new Set(["dry_run","booking_confirmed","already_booked"]);
   const incidentStatuses = new Set(["booking_failed","schedule_failed","outcome_unconfirmed","incorrect_credentials","class_not_found","booking_missed"]);
   const pendingStatuses = new Set(["scheduled","pending_schedule","scheduling","processing"]);
@@ -200,7 +255,7 @@
     ]);
     state.bookings=bookingData.bookings||[];
     state.results=resultData.results||[];
-    renderStats(); renderBookings(); renderActivity(); renderCalendar();
+    renderStats(); renderQuotaWarnings(); renderBookings(); renderActivity(); renderCalendar();
     $("last-updated").textContent="Actualizado "+new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
   }
   $("auth-form").addEventListener("submit",async(event)=>{
