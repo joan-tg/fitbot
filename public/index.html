@@ -56,6 +56,15 @@
         <article class="stat-card"><span class="stat-label">INCIDENCIAS</span><strong id="stat-errors">—</strong><small>Requieren revisión</small></article>
       </section>
 
+      <section class="panel quota-panel" aria-labelledby="quota-heading">
+        <div class="section-heading quota-heading">
+          <div><div class="eyebrow">CONTROL INFORMATIVO</div><h2 id="quota-heading">Cuotas del mes</h2></div>
+          <span id="quota-month" class="muted small-text"></span>
+        </div>
+        <p class="quota-intro">Seguimiento de las cuotas mensuales. Los avisos son informativos y nunca bloquean una programación.</p>
+        <div id="quota-summary" class="quota-grid" aria-live="polite"><div class="empty-state">Calculando cuotas…</div></div>
+      </section>
+
       <section class="content-grid">
         <article class="panel booking-panel">
           <div class="section-heading">
@@ -119,10 +128,8 @@
           </div>
         </div>
         <div class="calendar-legend" aria-label="Leyenda del calendario">
+          <span><i class="legend-dot completed"></i>Confirmada</span>
           <span><i class="legend-dot pending"></i>Programada</span>
-          <span><i class="legend-dot completed"></i>Simulada / reservada</span>
-          <span><i class="legend-dot incident"></i>Incidencia</span>
-          <span><i class="legend-dot cancelled"></i>Cancelada</span>
         </div>
         <div class="calendar-weekdays" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span></div>
         <div class="calendar-grid" id="calendar-grid" aria-label="Calendario de clases"></div>

@@ -28,7 +28,7 @@
 .calendar-legend{display:flex;flex-wrap:wrap;gap:15px;margin:0 0 14px;color:#aab8c9;font-size:10px}
 .calendar-legend span{display:flex;align-items:center;gap:6px}
 .legend-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
-.legend-dot.pending{background:var(--amber)}.legend-dot.completed{background:var(--mint)}.legend-dot.incident{background:var(--red)}.legend-dot.cancelled{background:#8292a7}
+.legend-dot.pending{background:#8292a7}.legend-dot.completed{background:var(--mint)}.legend-dot.incident{background:var(--red)}.legend-dot.cancelled{background:#8292a7}
 .calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
 .calendar-weekdays{margin-bottom:6px}
 .calendar-weekdays span{text-align:center;color:#7f91a8;font-size:9px;font-weight:700;letter-spacing:.7px;padding:7px 0}
@@ -39,7 +39,7 @@
 .calendar-day.is-selected{border-color:var(--mint);background:#17302f;box-shadow:inset 0 0 0 1px #8ce2c044}
 .calendar-day-number{font-size:11px;font-weight:700;margin-bottom:1px}
 .calendar-event{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:4px;padding:3px 4px;font-size:9px;line-height:1.3}
-.calendar-event.pending{background:#3b3020;color:var(--amber)}
+.calendar-event.pending{background:#303b49;color:#c0cad6}
 .calendar-event.completed{background:#173b35;color:var(--mint)}
 .calendar-event.incident{background:#432b32;color:var(--red)}
 .calendar-event.cancelled{background:#263347;color:#a4b1c2}
@@ -67,3 +67,16 @@
 
 .status-booking_missed{background:#432b32;color:var(--red)}
 .status-detail{display:block;color:#e6a1a8;font-size:9px;line-height:1.35;margin-top:4px;white-space:normal;max-width:230px}
+
+.quota-panel{padding:22px 23px;margin-bottom:16px}
+.quota-heading{margin-bottom:8px}
+.quota-intro{margin:0 0 15px;color:var(--muted);font-size:11px}
+.quota-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.quota-person{padding:14px;background:rgba(10,20,34,.45);border:1px solid rgba(255,255,255,.07);border-radius:11px;min-width:0}
+.quota-person h3{margin:0 0 10px;font:700 14px Manrope,sans-serif}
+.quota-line{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:8px 0;border-top:1px solid rgba(255,255,255,.06);font-size:11px;color:#c5d0dd}
+.quota-line strong{font-size:10px;text-align:right;color:var(--mint)}
+.quota-line.quota-warning strong{color:var(--amber)}
+.quota-line.quota-exceeded strong{color:var(--red)}
+.quota-uncertain{margin:9px 0 0;color:var(--amber);font-size:10px;line-height:1.45}
+@media(max-width:560px){.quota-panel{padding:17px}.quota-grid{grid-template-columns:1fr}.quota-line{font-size:10px}.quota-line strong{font-size:9px}}
