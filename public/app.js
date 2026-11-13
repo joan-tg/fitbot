@@ -165,10 +165,9 @@
     </tr>`).join("");
   }
   function calendarCategory(status) {
-    if (completedStatuses.has(status)) return "completed";
-    if (status === "cancelled") return "cancelled";
-    if (pendingStatuses.has(status)) return "pending";
-    return "incident";
+    if (status === "booking_confirmed" || status === "already_booked") return "completed";
+    if (status === "scheduled") return "pending";
+    return null;
   }
   function calendarMonthKey(year, month) {
     return year+"-"+String(month+1).padStart(2,"0");
@@ -185,7 +184,10 @@
     const monthKey=calendarMonthKey(year,month);
     const monthLabel=new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric"}).format(first);
     $("calendar-month-title").textContent=monthLabel.charAt(0).toLocaleUpperCase("es-ES")+monthLabel.slice(1);
-    const monthRecords=historyRecords().filter(item=>item.date && item.date.slice(0,7)===monthKey && item.status!=="replaced");
+    const monthRecords=historyRecords().filter(item=>
+      item.date && item.date.slice(0,7)===monthKey &&
+      (item.status==="booking_confirmed" || item.status==="already_booked" || item.status==="scheduled")
+    );
     const byDate=new Map();
     monthRecords.forEach(item=>{
       if(!byDate.has(item.date)) byDate.set(item.date,[]);
