@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from client import AimHarderClient  # noqa: E402
-from exceptions import AimHarderUnavailable  # noqa: E402
 from fitbot_cli import get_class_to_book  # noqa: E402
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 from scheduled import load_config  # noqa: E402
@@ -100,7 +99,9 @@ def _check_confirmed_bookings(config, records, now, client_factory=None):
                     proxy=os.environ.get("PROXY") or None,
                 )
             except Exception:
-                logger.exception("AimHarder login failed during read-only sync for %s", person_id)
+                logger.exception(
+                    "AimHarder login failed during read-only sync for %s", person_id
+                )
                 clients[person_id] = None
         client = clients[person_id]
         if client is None:
@@ -121,7 +122,9 @@ def _check_confirmed_bookings(config, records, now, client_factory=None):
         try:
             classes = client.get_classes(target_day, config.get("family_id"))
         except Exception:
-            logger.exception("AimHarder classes lookup failed for %s on %s", person_id, target_date)
+            logger.exception(
+                "AimHarder classes lookup failed for %s on %s", person_id, target_date
+            )
             unverified.extend(
                 {
                     "booking_id": booking.get("id"),
@@ -212,7 +215,8 @@ class handler(BaseHTTPRequestHandler):
             )
             result = _check_confirmed_bookings(config, records, now)
             logger.info(
-                "Read-only booking sync completed: checked=%s discrepancies=%s unverified=%s",
+                "Read-only booking sync completed: checked=%s "
+                "discrepancies=%s unverified=%s",
                 result["checked"],
                 len(result["discrepancies"]),
                 len(result["unverified"]),
