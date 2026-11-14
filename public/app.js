@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100" };
+  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync" };
   const $ = (id) => document.getElementById(id);
   const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
@@ -49,12 +49,43 @@
     if (!response.ok) throw new Error(data.error || "Error HTTP "+response.status);
     return data;
   }
+  function renderSyncNotice(result) {
+    const el=$("sync-notice");
+    el.hidden=true;
+    el.className="sync-notice";
+    el.textContent="";
+    if(!result) return;
+    if(result.error) {
+      el.classList.add("is-warning");
+      el.textContent="No se pudo comprobar AimHarder en esta entrada. Los datos de FitBot no se han modificado.";
+      el.hidden=false;
+      return;
+    }
+    const discrepancies=result.discrepancies||[];
+    const unverified=result.unverified||[];
+    if(discrepancies.length) {
+      el.classList.add("is-warning");
+      const items=discrepancies.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
+      el.innerHTML="<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" confirmada"+(discrepancies.length===1?"":"s")+" que no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>No se ha cambiado ningún estado. Revisa estas discrepancias antes de actuar.</small>";
+      el.hidden=false;
+    } else if(unverified.length) {
+      el.classList.add("is-warning");
+      el.textContent="Se han verificado "+result.checked+" reservas, pero otras "+unverified.length+" no han podido comprobarse. No se ha modificado ningún estado.";
+      el.hidden=false;
+    } else if(result.checked) {
+      toast("Sincronización completada: "+result.checked+" reserva"+(result.checked===1?"":"s")+" verificadas.");
+    }
+  }
   async function connect(token) {
     state.token=token;
-    const data=await request("/api/bookings?limit=1");
+    await request("/api/bookings?limit=1");
     sessionStorage.setItem("fitbot_admin_token",token);
     showDashboard(true);
+    let syncResult;
+    try { syncResult=await request(API.sync); }
+    catch(error) { syncResult={error:error.message}; }
     await refreshAll();
+    renderSyncNotice(syncResult);
   }
   function renderStats() {
     const counts = state.bookings.reduce((acc,b)=>{acc[b.status]=(acc[b.status]||0)+1;return acc;},{});
