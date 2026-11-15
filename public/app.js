@@ -72,13 +72,18 @@
       fitbot_status_update_failed:"no se ha podido actualizar el estado interno de FitBot"
     };
     const sections=[];
+    if(result.read_only) {
+      sections.push("<strong>Preview en modo de solo lectura.</strong><small>Esta vista comparte Redis con Production en el plan gratuito. Puedes consultar los datos y comprobar AimHarder, pero Preview no modificará reservas, historial ni programaciones.</small>");
+    }
     if(discrepancies.length) {
       const items=discrepancies.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
       const synced=discrepancies.filter(item=>item.fitbot_status_updated).length;
       const failed=discrepancies.length-synced;
-      const summary=synced
-        ? synced+" reserva"+(synced===1?"":"s")+" marcada"+(synced===1?"":"s")+" como cancelada"+(synced===1?"":"s")+" también en FitBot. El historial se conserva."
-        : "FitBot no ha podido actualizar el estado interno.";
+      const summary=result.read_only
+        ? "No se ha modificado ninguna reserva en FitBot porque Preview está en modo de solo lectura."
+        : synced
+          ? synced+" reserva"+(synced===1?"":"s")+" marcada"+(synced===1?"":"s")+" como cancelada"+(synced===1?"":"s")+" también en FitBot. El historial se conserva."
+          : "FitBot no ha podido actualizar el estado interno.";
       sections.push("<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" que ya no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+(failed?" "+failed+" no se han podido sincronizar.":"")+"</small>");
     }
     if(unverified.length) {
