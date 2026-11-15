@@ -305,3 +305,125 @@ def test_sync_treats_duplicate_exact_matches_as_unverified(monkeypatch):
 
     assert result["discrepancies"] == []
     assert result["unverified"][0]["reason"] == "class_not_resolved"
+
+
+def _discovery_config():
+    value = config()
+    value["activities"] = {
+        "class": ["Weightlifting", "Strength Conditioning", "Metcon"],
+        "open_box": ["Open Box"],
+    }
+    return value
+
+
+def _weekly_classes():
+    return {
+        "2026-11-16": [
+            {"timeid": "0900_60", "className": "Weightlifting", "bookState": 1},
+            {
+                "timeid": "1000_60",
+                "className": "Strength Conditioning",
+                "bookState": 1,
+            },
+        ],
+        "2026-11-17": [
+            {"timeid": "1815_60", "className": "Metcon", "bookState": 1}
+        ],
+        "2026-11-18": [
+            {"timeid": "1715_60", "className": "Weightlifting", "bookState": 1},
+            {
+                "timeid": "1815_60",
+                "className": "Strength Conditioning",
+                "bookState": 1,
+            },
+        ],
+    }
+
+
+def test_external_discovery_detects_both_members_without_preview_writes(monkeypatch):
+    for key in (
+        "AIMHARDER_PERSON_1_EMAIL",
+        "AIMHARDER_PERSON_1_PASSWORD",
+        "AIMHARDER_PERSON_2_EMAIL",
+        "AIMHARDER_PERSON_2_PASSWORD",
+    ):
+        monkeypatch.setenv(key, key)
+
+    weekly = _weekly_classes()
+
+    class DiscoveryClient:
+        def __init__(self, email, **kwargs):
+            self.email = email
+
+        def get_classes(self, target_day, family_id=None):
+            return weekly.get(target_day.date().isoformat(), [])
+
+    result = sync_api._discover_external_bookings(
+        _discovery_config(),
+        [],
+        NOW,
+        client_factory=DiscoveryClient,
+        booking_store=None,
+    )
+
+    assert len(result["external_bookings"]) == 10
+    assert result["imported"] == 0
+    assert result["import_writes_enabled"] is False
+    assert result["discovery_unverified"] == []
+    assert {item["person_id"] for item in result["external_bookings"]} == {
+        "person_1",
+        "person_2",
+    }
+
+
+def test_external_discovery_imports_idempotently_without_scheduling(monkeypatch):
+    for key in (
+        "AIMHARDER_PERSON_1_EMAIL",
+        "AIMHARDER_PERSON_1_PASSWORD",
+        "AIMHARDER_PERSON_2_EMAIL",
+        "AIMHARDER_PERSON_2_PASSWORD",
+    ):
+        monkeypatch.setenv(key, key)
+
+    weekly = _weekly_classes()
+
+    class DiscoveryClient:
+        def __init__(self, email, **kwargs):
+            self.email = email
+
+        def get_classes(self, target_day, family_id=None):
+            return weekly.get(target_day.date().isoformat(), [])
+
+    class FakeStore:
+        def __init__(self):
+            self.records = {}
+
+        def create_booking(self, booking):
+            if booking["id"] in self.records:
+                return False
+            self.records[booking["id"]] = booking
+            return True
+
+    store = FakeStore()
+    first = sync_api._discover_external_bookings(
+        _discovery_config(),
+        [],
+        NOW,
+        client_factory=DiscoveryClient,
+        booking_store=store,
+    )
+    second = sync_api._discover_external_bookings(
+        _discovery_config(),
+        list(store.records.values()),
+        NOW,
+        client_factory=DiscoveryClient,
+        booking_store=store,
+    )
+
+    assert first["imported"] == 10
+    assert len(store.records) == 10
+    assert all(item["status"] == "already_booked" for item in store.records.values())
+    assert all(item["opens_at"].endswith("+01:00") for item in store.records.values())
+    assert second["external_bookings"] == []
+    assert second["imported"] == 0
+    assert second["already_tracked"] == 10
