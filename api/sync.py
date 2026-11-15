@@ -162,18 +162,46 @@ def _check_confirmed_bookings(config, records, now, client_factory=None):
             book_state = selected.get("bookState")
             if book_state == 1:
                 checked += 1
-            elif book_state == 0:
+            elif book_state == 0 or book_state is None:
                 checked += 1
-                discrepancies.append(
-                    {
-                        "booking_id": booking.get("id"),
-                        "person_id": person_id,
-                        "date": booking.get("date"),
-                        "time": booking.get("time"),
-                        "name": booking.get("name"),
-                        "reason": "not_booked_in_aimharder",
-                    }
-                )
+                discrepancy = {
+                    "booking_id": booking.get("id"),
+                    "person_id": person_id,
+                    "date": booking.get("date"),
+                    "time": booking.get("time"),
+                    "name": booking.get("name"),
+                    "reason": "not_booked_in_aimharder",
+                    "observed_book_state": book_state,
+                }
+                if booking_store is not None:
+                    try:
+                        updated = booking_store.update_booking_status(
+                            booking["id"],
+                            "cancelled",
+                            expected_statuses=sorted(CONFIRMED_STATUSES),
+                            metadata={
+                                "cancelled_at": now.isoformat(),
+                                "error_code": "cancelled_in_aimharder",
+                            },
+                        )
+                        discrepancy["fitbot_status_updated"] = updated is not None
+                    except Exception:
+                        logger.exception(
+                            "Could not synchronize external cancellation for booking %s",
+                            booking.get("id"),
+                        )
+                        discrepancy["fitbot_status_updated"] = False
+                        unverified.append(
+                            {
+                                "booking_id": booking.get("id"),
+                                "person_id": person_id,
+                                "date": booking.get("date"),
+                                "time": booking.get("time"),
+                                "name": booking.get("name"),
+                                "reason": "fitbot_status_update_failed",
+                            }
+                        )
+                discrepancies.append(discrepancy)
             else:
                 raw_state = selected.get("bookState")
                 # Expose only this single API field for diagnosis; never log the
@@ -201,7 +229,7 @@ def _check_confirmed_bookings(config, records, now, client_factory=None):
         "checked": checked,
         "discrepancies": discrepancies,
         "unverified": unverified,
-        "read_only": True,
+        "read_only": booking_store is None,
     }
 
 
@@ -220,15 +248,16 @@ class handler(BaseHTTPRequestHandler):
             config = load_config(ROOT / "reservas.json")
             timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
             now = datetime.now(timezone)
-            records = UpstashRedis().list_bookings(
-                limit=UpstashRedis.BOOKINGS_MAX_ITEMS
+            store = UpstashRedis()
+            records = store.list_bookings(limit=UpstashRedis.BOOKINGS_MAX_ITEMS)
+            result = _check_confirmed_bookings(
+                config, records, now, booking_store=store
             )
-            result = _check_confirmed_bookings(config, records, now)
             reason_counts = defaultdict(int)
             for item in result["unverified"]:
                 reason_counts[item.get("reason", "unknown")] += 1
             logger.info(
-                "Read-only booking sync completed: checked=%s "
+                "Booking reconciliation completed: checked=%s "
                 "discrepancies=%s unverified=%s reasons=%s",
                 result["checked"],
                 len(result["discrepancies"]),
