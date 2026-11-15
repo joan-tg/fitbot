@@ -15,7 +15,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from client import AimHarderClient  # noqa: E402
-from fitbot_cli import get_class_to_book  # noqa: E402
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 from scheduled import load_config  # noqa: E402
 
@@ -41,6 +40,23 @@ def _authorized(handler):
         and supplied.startswith("Bearer ")
         and hmac.compare_digest(supplied[7:], expected)
     )
+
+
+def _resolve_exact_class(classes, target_time, class_name):
+    """Resolve one exact class by normalized time and full name only."""
+    requested_time = str(target_time).replace(":", "").strip()
+    requested_name = " ".join(str(class_name).split()).casefold()
+    matches = [
+        item
+        for item in classes
+        if isinstance(item, dict)
+        and str(item.get("timeid", "")).split("_", 1)[0] == requested_time
+        and isinstance(item.get("className"), str)
+        and " ".join(item["className"].split()).casefold() == requested_name
+    ]
+    if len(matches) != 1:
+        raise ValueError("Class is missing or ambiguous")
+    return matches[0]
 
 
 def _check_confirmed_bookings(
@@ -142,10 +158,8 @@ def _check_confirmed_bookings(
 
         for booking in bookings:
             try:
-                selected = get_class_to_book(
-                    classes,
-                    booking["time"].replace(":", ""),
-                    booking["name"],
+                selected = _resolve_exact_class(
+                    classes, booking["time"], booking["name"]
                 )
             except Exception:
                 # Missing/renamed/ambiguous classes are not proof of cancellation.
@@ -268,10 +282,10 @@ class handler(BaseHTTPRequestHandler):
             )
             return _respond(self, 200, result)
         except RedisUnavailable:
-            logger.exception("Booking store unavailable during read-only sync")
+            logger.exception("Booking store unavailable during dashboard sync")
             return _respond(self, 503, {"error": "Booking store unavailable"})
         except Exception:
-            logger.exception("Unexpected read-only booking sync failure")
+            logger.exception("Unexpected dashboard booking sync failure")
             return _respond(self, 503, {"error": "Booking sync unavailable"})
 
     def do_POST(self):
