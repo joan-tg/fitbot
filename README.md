@@ -73,10 +73,11 @@ The authenticated `GET /api/sync` endpoint runs when the dashboard session is op
 - A class is considered a match only when both its time and its complete name match (case-insensitive and whitespace-normalized). Partial matches and duplicate matches remain unverified.
 - `bookState=1` confirms the booking. `bookState=0` or `null` is treated as no longer booked; FitBot changes only its own matching confirmed record to `cancelled`, retaining the history. No AimHarder cancellation request is sent.
 - Missing classes, ambiguous matches, unknown states, unavailable credentials, and API errors remain unverified and are never treated as cancellations.
-- The sync can write to the Redis database configured for the current Vercel environment. Configure **different Upstash Redis databases** for Preview and Production; separate Vercel variable scopes alone do not guarantee that the values point to different databases.
+- Production may update its configured Redis database when AimHarder reports `bookState=0` or `null`; Preview is strictly read-only because the free Upstash tier permits only one database and Preview may share Production Redis.
+- In Preview, dashboard sync may read FitBot records and AimHarder status but never changes booking records. The periodic reconciler exits before reading or writing Redis. Booking creation, editing, cancellation, one-off scheduling, history deletion, and queued booking webhook execution are blocked in Preview.
 - Dashboard manual refresh does not trigger another AimHarder sync. The endpoint rejects `POST` and requires the administrative bearer token.
 
-Keep Preview isolated from Production and test it before merging. The sync does not create AimHarder bookings, call AimHarder cancellation endpoints, change QStash schedules, or change `DRY_RUN`.
+Preview can safely be used to inspect the shared dashboard and validate read-only AimHarder checks. It cannot be used to test booking mutations until a separate Redis database is configured. No changes to QStash schedules, credentials, or `DRY_RUN`.
 
 ## Using env files
 
