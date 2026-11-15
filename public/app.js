@@ -88,7 +88,7 @@
           : "";
         return "<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+" — "+escapeHtml(reasonLabels[item.reason]||"motivo no identificado")+diagnostic+"</li>";
       }).join("");
-      sections.push("<strong>Hay "+unverified.length+" reserva"+(unverified.length===1?"":"s")+" que no se han podido verificar.</strong><ul>"+items+"</ul><small>"+result.checked+" verificadas. Estas reservas no se han marcado como canceladas.</small>");
+      sections.push("<strong>Hay "+unverified.length+" reserva"+(unverified.length===1?"":"s")+" que no se han podido verificar.</strong><ul>"+items+"</ul><small>"+result.checked+" comprobadas. Estas reservas no se han marcado como canceladas.</small>");
     }
     if(sections.length) {
       el.classList.add("is-warning");
