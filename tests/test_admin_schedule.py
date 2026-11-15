@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import api.schedule as schedule_api
@@ -65,23 +67,23 @@ def test_schedule_allows_production_with_admin_token(monkeypatch):
     assert response["status"] == "scheduled"
 
 
-def test_schedule_allows_live_mode_in_preview(monkeypatch):
+def test_schedule_is_blocked_in_preview(monkeypatch):
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
     monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setattr(
         schedule_api,
         "_schedule_booking",
-        lambda payload: {"status": "scheduled"},
+        lambda payload: pytest.fail("Preview must not publish schedules"),
     )
     request = FakeHandler({"date": "2099-01-01"})
-    request.post()
-    assert request.status == 201
+    response = request.post()
+    assert request.status == 403
+    assert "read-only" in response["error"] or "disabled" in response["error"]
 
 
 def test_schedule_rejects_unknown_booking(monkeypatch):
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
-    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("VERCEL_ENV", "production")
     monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(
         schedule_api,

@@ -65,6 +65,20 @@ curl --request POST "https://YOUR-PREVIEW-URL/api/schedule" \
 
 The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview or Production. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. The response does not claim a dry-run/live mode: `/api/book` reads `DRY_RUN` when the message is delivered.
 
+## AimHarder booking synchronization
+
+The authenticated `GET /api/sync` endpoint runs when the dashboard session is opened (login or page reload). It checks future FitBot bookings already in a confirmed state against the corresponding AimHarder account.
+
+- It uses each member's own AimHarder credentials and reads the class list for each booked date.
+- A class is considered a match only when both its time and its complete name match (case-insensitive and whitespace-normalized). Partial matches and duplicate matches remain unverified.
+- `bookState=1` confirms the booking. `bookState=0` or `null` is treated as no longer booked; FitBot changes only its own matching confirmed record to `cancelled`, retaining the history. No AimHarder cancellation request is sent.
+- Missing classes, ambiguous matches, unknown states, unavailable credentials, and API errors remain unverified and are never treated as cancellations.
+- Production may update its configured Redis database when AimHarder reports `bookState=0` or `null`; Preview is strictly read-only because the free Upstash tier permits only one database and Preview may share Production Redis.
+- In Preview, dashboard sync may read FitBot records and AimHarder status but never changes booking records. The periodic reconciler exits before reading or writing Redis. Booking creation, editing, cancellation, one-off scheduling, history deletion, and queued booking webhook execution are blocked in Preview.
+- Dashboard manual refresh does not trigger another AimHarder sync. The endpoint rejects `POST` and requires the administrative bearer token.
+
+Preview can safely be used to inspect the shared dashboard and validate read-only AimHarder checks. It cannot be used to test booking mutations until a separate Redis database is configured. No changes to QStash schedules, credentials, or `DRY_RUN`.
+
 ## Using env files
 
 You can use env files for configuration and credentials instead of passing them directly on the command line:

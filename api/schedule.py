@@ -112,6 +112,14 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not _authorized(self):
             return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") == "preview":
+            return _respond(
+                self,
+                403,
+                {
+                    "error": "Preview scheduling is disabled while Redis is shared with Production"
+                },
+            )
         if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
             return _respond(
                 self,

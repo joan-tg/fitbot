@@ -52,9 +52,9 @@ def _processing_booking(updated_at):
 
 
 def _configure(monkeypatch, book_api, booking, redis_class):
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    # Preview must remain dry-run even if the environment variable is wrong.
-    monkeypatch.setenv("DRY_RUN", "false")
+    # Exercise webhook recovery in Production's explicit simulation mode.
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(
         book_api,

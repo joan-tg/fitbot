@@ -1,0 +1,532 @@
+import io
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import api.sync as sync_api
+
+TZ = ZoneInfo("Europe/Madrid")
+NOW = datetime(2026, 11, 15, 12, 0, tzinfo=TZ)
+
+
+def record(status="booking_confirmed", person_id="person_1", day="2026-11-16"):
+    return {
+        "id": "a" * 32,
+        "person_id": person_id,
+        "date": day,
+        "time": "13:15",
+        "name": "Open Box",
+        "status": status,
+    }
+
+
+def config():
+    return {
+        "timezone": "Europe/Madrid",
+        "box_name": "studiocrossfit",
+        "box_id": 9507,
+        "family_id": None,
+        "members": {
+            "person_1": {
+                "aimharder_credentials": {
+                    "email_env": "AIMHARDER_PERSON_1_EMAIL",
+                    "password_env": "AIMHARDER_PERSON_1_PASSWORD",
+                }
+            },
+            "person_2": {
+                "aimharder_credentials": {
+                    "email_env": "AIMHARDER_PERSON_2_EMAIL",
+                    "password_env": "AIMHARDER_PERSON_2_PASSWORD",
+                }
+            },
+        },
+    }
+
+
+class FakeClient:
+    def __init__(self, book_state=1, classes=None, **kwargs):
+        self.book_state = book_state
+        self.classes = classes
+        self.days = []
+
+    def get_classes(self, target_day, family_id=None):
+        self.days.append(target_day.date())
+        if self.classes is not None:
+            return self.classes
+        return [
+            {
+                "timeid": "1315_60",
+                "className": "Open Box",
+                "bookState": self.book_state,
+                "id": "class-1",
+            }
+        ]
+
+
+def test_sync_checks_confirmed_future_bookings_without_writes(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+    clients = []
+
+    def factory(**kwargs):
+        client = FakeClient(**kwargs)
+        clients.append(client)
+        return client
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record(), record(status="scheduled", day="2026-11-17")],
+        NOW,
+        client_factory=factory,
+    )
+
+    assert result["checked"] == 1
+    assert result["discrepancies"] == []
+    assert result["unverified"] == []
+    assert result["fitbot_updates_enabled"] is False
+    assert len(clients) == 1
+    assert clients[0].days == [NOW.date().replace(day=16)]
+
+
+def test_sync_reports_absent_booking_as_discrepancy_not_cancellation(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: FakeClient(book_state=0, **kwargs),
+    )
+
+    assert len(result["discrepancies"]) == 1
+    assert result["discrepancies"][0]["reason"] == "not_booked_in_aimharder"
+    assert result["fitbot_updates_enabled"] is False
+
+
+def test_sync_does_not_treat_unresolved_class_as_cancellation(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class MissingClassClient(FakeClient):
+        def get_classes(self, target_day, family_id=None):
+            return []
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: MissingClassClient(**kwargs),
+    )
+
+    assert result["discrepancies"] == []
+    assert result["unverified"][0]["reason"] == "class_not_resolved"
+
+
+def test_sync_checks_each_account_separately(monkeypatch):
+    for key in (
+        "AIMHARDER_PERSON_1_EMAIL",
+        "AIMHARDER_PERSON_1_PASSWORD",
+        "AIMHARDER_PERSON_2_EMAIL",
+        "AIMHARDER_PERSON_2_PASSWORD",
+    ):
+        monkeypatch.setenv(key, key)
+    calls = []
+
+    def factory(**kwargs):
+        calls.append(kwargs["email"])
+        return FakeClient(**kwargs)
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record(person_id="person_1"), record(person_id="person_2")],
+        NOW,
+        client_factory=factory,
+    )
+
+    assert result["checked"] == 2
+    assert len(calls) == 2
+    assert set(calls) == {"AIMHARDER_PERSON_1_EMAIL", "AIMHARDER_PERSON_2_EMAIL"}
+
+
+def test_sync_marks_missing_credentials_unverified(monkeypatch):
+    monkeypatch.delenv("AIMHARDER_PERSON_1_EMAIL", raising=False)
+    monkeypatch.delenv("AIMHARDER_PERSON_1_PASSWORD", raising=False)
+
+    result = sync_api._check_confirmed_bookings(config(), [record()], NOW)
+
+    assert result["checked"] == 0
+    assert result["discrepancies"] == []
+    assert result["unverified"][0]["reason"] == "credentials_unavailable"
+
+
+def test_sync_ignores_past_and_unconfirmed_records(monkeypatch):
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [
+            record(day="2026-11-14"),
+            record(status="scheduled", day="2026-11-16"),
+            record(status="outcome_unconfirmed", day="2026-11-16"),
+        ],
+        NOW,
+    )
+
+    assert result["checked"] == 0
+    assert result["discrepancies"] == []
+    assert result["unverified"] == []
+
+
+def test_sync_marks_zero_and_null_as_cancelled_in_fitbot(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class FakeStore:
+        def __init__(self):
+            self.updates = []
+
+        def update_booking_status(
+            self, booking_id, status, expected_statuses, metadata
+        ):
+            self.updates.append(
+                {
+                    "booking_id": booking_id,
+                    "status": status,
+                    "expected_statuses": expected_statuses,
+                    "metadata": metadata,
+                }
+            )
+            return {"id": booking_id, "status": status}
+
+    for state in (0, None):
+        store = FakeStore()
+        result = sync_api._check_confirmed_bookings(
+            config(),
+            [record()],
+            NOW,
+            client_factory=lambda **kwargs: FakeClient(book_state=state, **kwargs),
+            booking_store=store,
+        )
+
+        assert result["checked"] == 1
+        assert result["fitbot_updates_enabled"] is True
+        assert len(result["discrepancies"]) == 1
+        assert result["discrepancies"][0]["fitbot_status_updated"] is True
+        assert len(store.updates) == 1
+        assert store.updates[0]["status"] == "cancelled"
+        assert store.updates[0]["expected_statuses"] == sorted(
+            sync_api.CONFIRMED_STATUSES
+        )
+        assert store.updates[0]["metadata"]["error_code"] == "cancelled_in_aimharder"
+
+
+def test_sync_requires_exact_class_name_match(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class SimilarClassClient(FakeClient):
+        def get_classes(self, target_day, family_id=None):
+            return [
+                {
+                    "timeid": "1315_60",
+                    "className": "Open Box Strength",
+                    "bookState": 0,
+                    "id": "wrong-class",
+                }
+            ]
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: SimilarClassClient(**kwargs),
+    )
+
+    assert result["discrepancies"] == []
+    assert result["unverified"][0]["reason"] == "class_not_resolved"
+
+
+def test_sync_accepts_case_and_whitespace_normalization_for_exact_name(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class NormalizedExactClient(FakeClient):
+        def get_classes(self, target_day, family_id=None):
+            return [
+                {
+                    "timeid": "1315_60",
+                    "className": "  OPEN   BOX ",
+                    "bookState": 1,
+                    "id": "class-1",
+                }
+            ]
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: NormalizedExactClient(**kwargs),
+    )
+
+    assert result["checked"] == 1
+    assert result["discrepancies"] == []
+    assert result["unverified"] == []
+
+
+def test_sync_treats_duplicate_exact_matches_as_unverified(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class DuplicateClassClient(FakeClient):
+        def get_classes(self, target_day, family_id=None):
+            return [
+                {
+                    "timeid": "1315_60",
+                    "className": "Open Box",
+                    "bookState": 0,
+                    "id": "class-1",
+                },
+                {
+                    "timeid": "1315_45",
+                    "className": "Open Box",
+                    "bookState": 1,
+                    "id": "class-2",
+                },
+            ]
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: DuplicateClassClient(**kwargs),
+    )
+
+    assert result["discrepancies"] == []
+    assert result["unverified"][0]["reason"] == "class_not_resolved"
+
+
+def _discovery_config():
+    value = config()
+    value["activities"] = {
+        "class": ["Weightlifting", "Strength Conditioning", "Metcon"],
+        "open_box": ["Open Box"],
+    }
+    return value
+
+
+def _weekly_classes():
+    return {
+        "2026-11-16": [
+            {
+                "timeid": "0900_60",
+                "className": "Weightlifting",
+                "bookState": 1,
+            },
+            {
+                "timeid": "1000_60",
+                "className": "Strength Conditioning",
+                "bookState": 1,
+            },
+        ],
+        "2026-11-17": [
+            {
+                "timeid": "1815_60",
+                "className": "Metcon",
+                "bookState": 1,
+            }
+        ],
+        "2026-11-18": [
+            {"timeid": "1715_60", "className": "Weightlifting", "bookState": 1},
+            {
+                "timeid": "1815_60",
+                "className": "Strength Conditioning",
+                "bookState": 1,
+            },
+        ],
+    }
+
+
+def test_external_discovery_detects_both_members_without_preview_writes(monkeypatch):
+    for key in (
+        "AIMHARDER_PERSON_1_EMAIL",
+        "AIMHARDER_PERSON_1_PASSWORD",
+        "AIMHARDER_PERSON_2_EMAIL",
+        "AIMHARDER_PERSON_2_PASSWORD",
+    ):
+        monkeypatch.setenv(key, key)
+
+    weekly = _weekly_classes()
+
+    class DiscoveryClient:
+        def __init__(self, email, **kwargs):
+            self.email = email
+
+        def get_classes(self, target_day, family_id=None):
+            return weekly.get(target_day.date().isoformat(), [])
+
+    result = sync_api._discover_external_bookings(
+        _discovery_config(),
+        [],
+        NOW,
+        client_factory=DiscoveryClient,
+        booking_store=None,
+    )
+
+    assert len(result["external_bookings"]) == 10
+    assert result["imported"] == 0
+    assert result["import_writes_enabled"] is False
+    assert result["discovery_unverified"] == []
+    assert {item["person_id"] for item in result["external_bookings"]} == {
+        "person_1",
+        "person_2",
+    }
+
+
+def test_external_discovery_imports_idempotently_without_scheduling(monkeypatch):
+    for key in (
+        "AIMHARDER_PERSON_1_EMAIL",
+        "AIMHARDER_PERSON_1_PASSWORD",
+        "AIMHARDER_PERSON_2_EMAIL",
+        "AIMHARDER_PERSON_2_PASSWORD",
+    ):
+        monkeypatch.setenv(key, key)
+
+    weekly = _weekly_classes()
+
+    class DiscoveryClient:
+        def __init__(self, email, **kwargs):
+            self.email = email
+
+        def get_classes(self, target_day, family_id=None):
+            return weekly.get(target_day.date().isoformat(), [])
+
+    class FakeStore:
+        def __init__(self):
+            self.records = {}
+
+        def create_booking(self, booking):
+            if booking["id"] in self.records:
+                return False
+            self.records[booking["id"]] = booking
+            return True
+
+    store = FakeStore()
+    first = sync_api._discover_external_bookings(
+        _discovery_config(),
+        [],
+        NOW,
+        client_factory=DiscoveryClient,
+        booking_store=store,
+    )
+    second = sync_api._discover_external_bookings(
+        _discovery_config(),
+        list(store.records.values()),
+        NOW,
+        client_factory=DiscoveryClient,
+        booking_store=store,
+    )
+
+    assert first["imported"] == 10
+    assert len(first["imported_bookings"]) == 10
+    assert len(store.records) == 10
+    assert all(item["status"] == "already_booked" for item in store.records.values())
+    assert all(item["opens_at"].endswith("+01:00") for item in store.records.values())
+    assert second["external_bookings"] == []
+    assert second["imported"] == 0
+    assert second["already_tracked"] == 10
+
+
+class PostHandler:
+    def __init__(self, payload=None, token="Bearer admin"):
+        body = json.dumps(payload or {}).encode("utf-8")
+        self.headers = {
+            "Authorization": token,
+            "Content-Length": str(len(body)),
+        }
+        self.rfile = io.BytesIO(body)
+        self.wfile = io.BytesIO()
+        self.status = None
+        self.headers_sent = {}
+
+    def send_response(self, status):
+        self.status = status
+
+    def send_header(self, name, value):
+        self.headers_sent[name] = value
+
+    def end_headers(self):
+        pass
+
+
+def test_import_endpoint_rejects_preview_even_with_confirmation(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    request = PostHandler({"confirm_import": True})
+    sync_api.handler.do_POST(request)
+    assert request.status == 403
+    assert json.loads(request.wfile.getvalue())["error"] == (
+        "External booking import is Production-only"
+    )
+
+
+def test_import_endpoint_requires_explicit_confirmation(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    request = PostHandler({"confirm_import": False})
+    sync_api.handler.do_POST(request)
+    assert request.status == 400
+    assert json.loads(request.wfile.getvalue())["error"] == (
+        "Explicit confirmation is required"
+    )
+
+
+def test_import_endpoint_requires_admin_authentication(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    request = PostHandler({"confirm_import": True}, token="Bearer wrong")
+    sync_api.handler.do_POST(request)
+    assert request.status == 401
+
+
+def test_import_endpoint_rechecks_and_writes_only_in_production(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    calls = {}
+
+    class FakeRedis:
+        BOOKINGS_MAX_ITEMS = 500
+
+        def __init__(self):
+            pass
+
+        def list_bookings(self, limit):
+            calls["limit"] = limit
+            return []
+
+    def discover(config_value, records, now, booking_store=None):
+        calls["store"] = booking_store
+        return {
+            "external_bookings": [{"person_id": "person_1"}],
+            "imported": 1,
+            "imported_bookings": [{"person_id": "person_1"}],
+            "already_tracked": 0,
+            "discovery_unverified": [],
+            "import_writes_enabled": booking_store is not None,
+        }
+
+    monkeypatch.setattr(sync_api, "load_config", lambda path: _discovery_config())
+    monkeypatch.setattr(sync_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(sync_api, "_discover_external_bookings", discover)
+    request = PostHandler({"confirm_import": True})
+    sync_api.handler.do_POST(request)
+
+    payload = json.loads(request.wfile.getvalue())
+    assert request.status == 200
+    assert calls["limit"] == 500
+    assert calls["store"] is not None
+    assert payload["imported"] == 1
+    assert payload["read_only"] is False

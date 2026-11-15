@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100" };
+  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync" };
   const $ = (id) => document.getElementById(id);
   const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
@@ -49,12 +49,83 @@
     if (!response.ok) throw new Error(data.error || "Error HTTP "+response.status);
     return data;
   }
+  function renderSyncNotice(result) {
+    const el=$("sync-notice");
+    el.hidden=true;
+    el.className="sync-notice";
+    el.textContent="";
+    if(!result) return;
+    if(result.error) {
+      el.classList.add("is-warning");
+      el.textContent="No se ha podido completar la sincronización con AimHarder. Comprueba el estado de las reservas antes de tomar decisiones; podría haber cambios parciales.";
+      el.hidden=false;
+      return;
+    }
+    const discrepancies=result.discrepancies||[];
+    const unverified=result.unverified||[];
+    const reasonLabels={
+      credentials_unavailable:"credenciales no disponibles",
+      account_unavailable:"cuenta no disponible",
+      classes_unavailable:"AimHarder no ha devuelto las clases",
+      class_not_resolved:"no se ha encontrado una coincidencia exacta de la clase",
+      unknown_booking_state:"AimHarder ha devuelto un estado de reserva desconocido",
+      fitbot_status_update_failed:"no se ha podido actualizar el estado interno de FitBot",
+      ambiguous_external_class:"la clase reservada aparece duplicada en AimHarder",
+      fitbot_import_failed:"AimHarder confirma la reserva, pero no se ha podido guardar en FitBot"
+    };
+    const sections=[];
+    if(result.read_only) {
+      sections.push("<strong>Preview en modo de solo lectura.</strong><small>Esta vista comparte Redis con Production en el plan gratuito. Puedes consultar los datos y comprobar AimHarder, pero Preview no modificará reservas, historial ni programaciones.</small>");
+    }
+    if(discrepancies.length) {
+      const items=discrepancies.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
+      const synced=discrepancies.filter(item=>item.fitbot_status_updated).length;
+      const failed=discrepancies.length-synced;
+      const summary=result.read_only
+        ? "No se ha modificado ninguna reserva en FitBot porque Preview está en modo de solo lectura."
+        : synced
+          ? synced+" reserva"+(synced===1?"":"s")+" marcada"+(synced===1?"":"s")+" como cancelada"+(synced===1?"":"s")+" también en FitBot. El historial se conserva."
+          : "FitBot no ha podido actualizar el estado interno.";
+      sections.push("<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" que ya no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+(failed?" "+failed+" no se han podido sincronizar.":"")+"</small>");
+    }
+    const externalBookings=result.external_bookings||[];
+    if(externalBookings.length) {
+      const items=externalBookings.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
+      const summary=result.imported
+        ? result.imported+" reserva"+(result.imported===1?" importada":"s importadas")+" en FitBot. No se ha enviado ninguna reserva a AimHarder ni se han creado tareas QStash."
+        : externalBookings.length+" reserva"+(externalBookings.length===1?" externa detectada":"s externas detectadas")+". Pendientes de importación autorizada; esta consulta no ha importado ninguna ni ha enviado reservas a AimHarder o QStash.";
+      const importAction=!result.read_only && !result.imported
+        ? '<button class="outline-button import-external-button" type="button" data-import-external="true">Importar '+externalBookings.length+' reservas en FitBot</button>'
+        : "";
+      sections.push("<strong>Reservas encontradas directamente en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+"</small>"+importAction);
+    }
+    if(unverified.length) {
+      const items=unverified.map(item=>{
+        const diagnostic=item.reason==="unknown_booking_state"
+          ? " (bookState: "+escapeHtml(String(item.observed_book_state))+" · tipo "+escapeHtml(item.observed_book_state_type||"desconocido")+")"
+          : "";
+        return "<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+" — "+escapeHtml(reasonLabels[item.reason]||"motivo no identificado")+diagnostic+"</li>";
+      }).join("");
+      sections.push("<strong>Hay "+unverified.length+" reserva"+(unverified.length===1?"":"s")+" que no se han podido verificar.</strong><ul>"+items+"</ul><small>"+result.checked+" comprobadas. Estas reservas no se han marcado como canceladas.</small>");
+    }
+    if(sections.length) {
+      el.classList.add("is-warning");
+      el.innerHTML=sections.join("<hr>");
+      el.hidden=false;
+    } else if(result.checked) {
+      toast("Sincronización completada: "+result.checked+" reserva"+(result.checked===1?"":"s")+" verificadas.");
+    }
+  }
   async function connect(token) {
     state.token=token;
-    const data=await request("/api/bookings?limit=1");
+    await request("/api/bookings?limit=1");
     sessionStorage.setItem("fitbot_admin_token",token);
     showDashboard(true);
+    let syncResult;
+    try { syncResult=await request(API.sync); }
+    catch(error) { syncResult={error:error.message}; }
     await refreshAll();
+    renderSyncNotice(syncResult);
   }
   function renderStats() {
     const counts = state.bookings.reduce((acc,b)=>{acc[b.status]=(acc[b.status]||0)+1;return acc;},{});
@@ -133,7 +204,7 @@
     });
     const records = state.bookings.filter(b=>b.status!=="replaced").map(b=>{
       const result=resultById.get(b.id);
-      return {...b,...(result||{}),id:b.id,status:result?.status||b.status,name:b.name||result?.class||result?.name||"Reserva",date:b.date||result?.date,time:b.time||result?.time,person_id:b.person_id||result?.person_id,recorded_at:result?.recorded_at||b.updated_at||b.created_at};
+      return {...b,...(result||{}),id:b.id,status:b.status==="cancelled"?b.status:(result?.status||b.status),name:b.name||result?.class||result?.name||"Reserva",date:b.date||result?.date,time:b.time||result?.time,person_id:b.person_id||result?.person_id,recorded_at:result?.recorded_at||b.updated_at||b.created_at};
     });
     const knownIds = new Set(state.bookings.map(booking=>booking.id));
     state.results.filter(r=>!r.booking_id || !knownIds.has(r.booking_id)).forEach((r,index)=>{
@@ -277,17 +348,48 @@
   }
   $("refresh-button").addEventListener("click",refresh);
   $("refresh-inline").addEventListener("click",refresh);
-  $("show-calendar").addEventListener("click",()=>{
-    $("calendar-panel").hidden=false;$("history-panel").hidden=true;
-    $("show-calendar").classList.add("is-active");$("show-history").classList.remove("is-active");
-    $("show-calendar").setAttribute("aria-pressed","true");$("show-history").setAttribute("aria-pressed","false");
-    renderCalendar();
+  $("sync-notice").addEventListener("click",async(event)=>{
+    const button=event.target.closest("[data-import-external]");
+    if(!button || button.disabled) return;
+    if(!confirm("Se volverán a consultar las cuentas de AimHarder y se registrarán en FitBot únicamente las reservas que sigan confirmadas. No se crearán ni cancelarán reservas en AimHarder y no se programará ninguna tarea. ¿Continuar?")) return;
+    button.disabled=true;
+    button.textContent="Comprobando e importando…";
+    try {
+      const result=await request(API.sync,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({confirm_import:true})
+      });
+      await refreshAll();
+      const imported=result.imported||0;
+      const failed=(result.discovery_unverified||[]).length;
+      renderSyncNotice({
+        read_only:false,
+        external_bookings:result.imported_bookings||[],
+        imported,
+        discovery_unverified:result.discovery_unverified||[],
+        discrepancies:[]
+      });
+      toast(imported+" reserva"+(imported===1?" importada":"s importadas")+" en FitBot"+(failed?"; "+failed+" sin verificar":""));
+      if(!imported && !failed) $("sync-notice").hidden=true;
+    } catch(error) {
+      button.disabled=false;
+      button.textContent="Reintentar importación";
+      toast(error.message);
+    }
   });
-  $("show-history").addEventListener("click",()=>{
-    $("calendar-panel").hidden=true;$("history-panel").hidden=false;
-    $("show-history").classList.add("is-active");$("show-calendar").classList.remove("is-active");
-    $("show-history").setAttribute("aria-pressed","true");$("show-calendar").setAttribute("aria-pressed","false");
-  });
+  function setAgendaView(view) {
+    const showCalendar=view==="calendar";
+    $("calendar-panel").hidden=!showCalendar;
+    $("history-panel").hidden=showCalendar;
+    $("show-calendar").classList.toggle("is-active",showCalendar);
+    $("show-history").classList.toggle("is-active",!showCalendar);
+    $("show-calendar").setAttribute("aria-pressed",String(showCalendar));
+    $("show-history").setAttribute("aria-pressed",String(!showCalendar));
+    if(showCalendar) renderCalendar();
+  }
+  $("show-calendar").addEventListener("click",()=>setAgendaView("calendar"));
+  $("show-history").addEventListener("click",()=>setAgendaView("history"));
   $("calendar-prev").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth-1));
   $("calendar-next").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth+1));
   $("calendar-today").addEventListener("click",()=>setCalendarMonth(new Date().getFullYear(),new Date().getMonth()));

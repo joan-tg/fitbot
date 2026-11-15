@@ -16,6 +16,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.results")
+PREVIEW_READ_ONLY_ERROR = (
+    "Preview is read-only; shared Production Redis cannot be modified"
+)
 
 
 def _response(handler, status, payload):
@@ -58,6 +61,8 @@ class handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         if not _authorized(self):
             return _response(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") == "preview":
+            return _response(self, 403, {"error": PREVIEW_READ_ONLY_ERROR})
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
             if content_length <= 0 or content_length > 4096:

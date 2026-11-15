@@ -84,9 +84,7 @@ class FakeHandler:
         return json.loads(self.wfile.getvalue())
 
 
-def test_preview_integration_probe_acquires_real_redis_lock_without_running_scheduler(
-    monkeypatch,
-):
+def test_preview_webhook_acknowledges_without_touching_shared_redis(monkeypatch):
     import api.book as book_api
 
     payload = json.dumps(
@@ -99,45 +97,29 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
         }
     ).encode()
     monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
-
-    class FakeRedis:
-        def acquire(self, booking, dry_run, ttl_seconds):
-            assert booking["name"] == "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
-            assert dry_run is True
-            assert ttl_seconds == 300
-            return True
-
-        def record_integration_result(self, probe_id, step, result):
-            assert (probe_id, step, result) == (
-                "integration-run-123",
-                "first",
-                "integration_test_lock_acquired",
-            )
-
-        @staticmethod
-        def integration_result_key(probe_id, step):
-            return f"fitbot:integration:{probe_id}:{step}"
-
-    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        book_api,
+        "UpstashRedis",
+        lambda: pytest.fail("Preview webhook must not access shared Redis"),
+    )
     monkeypatch.setattr(
         book_api,
         "run",
-        lambda *a, **k: pytest.fail("scheduler must not run"),
+        lambda *a, **k: pytest.fail("Preview webhook must not call AimHarder"),
     )
     request = FakeHandler(payload)
     response = request.post()
 
     assert request.status == 200
-    assert response["status"] == "integration_test_lock_acquired"
-    assert response["dry_run"] is True
-    assert response["environment"] == "preview"
+    assert response["status"] == "preview_read_only"
+    assert response["booking_executed"] is False
 
 
 @pytest.mark.parametrize(
     ("vercel_env", "dry_run"),
-    [("production", "true"), ("preview", "false")],
+    [("production", "true")],
 )
 def test_integration_probe_is_blocked_outside_safe_preview(
     monkeypatch, vercel_env, dry_run
@@ -475,8 +457,8 @@ def test_dynamic_booking_loads_redis_record_claims_and_records_dry_run(monkeypat
         def record_booking_result(self, record):
             events.append(("history", record["status"], record["person_id"]))
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
@@ -548,8 +530,8 @@ def test_qstash_delivery_recovers_unconfirmed_publication_status(
         def record_booking_result(self, record):
             calls.append(("history", record["status"]))
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
@@ -629,7 +611,7 @@ def test_dynamic_booking_lock_contention_is_retried_not_acknowledged(monkeypatch
             stored["status"] = status
             return dict(stored)
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("VERCEL_ENV", "production")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
@@ -678,8 +660,8 @@ def test_expired_dynamic_booking_is_marked_missed_and_recorded(monkeypatch):
         def acquire(self, *args, **kwargs):
             pytest.fail("expired bookings must not contact AimHarder")
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
@@ -832,8 +814,8 @@ def test_legacy_static_booking_in_preview_is_forced_to_dry_run(monkeypatch):
         calls.append(("run", force_dry_run))
         return {"status": "completed", "outcomes": [{"status": "dry_run"}]}
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
     monkeypatch.setattr(

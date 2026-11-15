@@ -303,6 +303,14 @@ class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not _authorized(self):
             return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") == "preview":
+            return _respond(
+                self,
+                403,
+                {
+                    "error": "Preview is read-only because it shares the Production Redis database"
+                },
+            )
         if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
             return _respond(
                 self,
@@ -352,6 +360,14 @@ class handler(BaseHTTPRequestHandler):
         """Replace a pending booking; the old QStash delivery becomes harmless."""
         if not _authorized(self):
             return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") == "preview":
+            return _respond(
+                self,
+                403,
+                {
+                    "error": "Preview is read-only because it shares the Production Redis database"
+                },
+            )
         if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
             return _respond(
                 self,
@@ -577,6 +593,14 @@ class handler(BaseHTTPRequestHandler):
         """
         if not _authorized(self):
             return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") == "preview":
+            return _respond(
+                self,
+                403,
+                {
+                    "error": "Preview is read-only because it shares the Production Redis database"
+                },
+            )
         if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
             return _respond(
                 self,
