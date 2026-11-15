@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import os
 import sys
 from collections import defaultdict
@@ -252,6 +253,7 @@ def _check_confirmed_bookings(
 
 
 DISCOVERY_DAYS = 7
+MAX_IMPORT_BODY_BYTES = 1024
 
 
 def _booking_identity(person_id, target_date, target_time, name):
@@ -433,6 +435,7 @@ def _discover_external_bookings(
     return {
         "external_bookings": detected,
         "imported": len(imported),
+        "imported_bookings": imported,
         "already_tracked": already_tracked,
         "discovery_unverified": unverified,
         "import_writes_enabled": booking_store is not None,
@@ -493,7 +496,55 @@ class handler(BaseHTTPRequestHandler):
             return _respond(self, 503, {"error": "Booking sync unavailable"})
 
     def do_POST(self):
-        return _respond(self, 405, {"error": "Method not allowed"})
+        if not _authorized(self):
+            return _respond(self, 401, {"error": "Unauthorized"})
+        if os.environ.get("VERCEL_ENV") != "production":
+            return _respond(
+                self,
+                403,
+                {"error": "External booking import is Production-only"},
+            )
+
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length <= 0 or content_length > MAX_IMPORT_BODY_BYTES:
+                return _respond(self, 400, {"error": "Invalid request body size"})
+            payload = json.loads(self.rfile.read(content_length))
+            if not isinstance(payload, dict) or payload != {"confirm_import": True}:
+                return _respond(
+                    self,
+                    400,
+                    {"error": "Explicit confirmation is required"},
+                )
+
+            config = load_config(ROOT / "reservas.json")
+            timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
+            now = datetime.now(timezone)
+            store = UpstashRedis()
+            records = store.list_bookings(limit=UpstashRedis.BOOKINGS_MAX_ITEMS)
+            # Re-query AimHarder immediately before writing. The operation only
+            # creates local already_booked records; it never books/cancels in
+            # AimHarder or publishes work to QStash.
+            result = _discover_external_bookings(
+                config, records, now, booking_store=store
+            )
+            result["read_only"] = False
+            logger.info(
+                "Explicit external booking import completed: imported=%s "
+                "already_tracked=%s unverified=%s",
+                result["imported"],
+                result["already_tracked"],
+                len(result["discovery_unverified"]),
+            )
+            return _respond(self, 200, result)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return _respond(self, 400, {"error": "Invalid import confirmation"})
+        except RedisUnavailable:
+            logger.exception("Booking store unavailable during external import")
+            return _respond(self, 503, {"error": "Booking store unavailable"})
+        except Exception:
+            logger.exception("Unexpected external booking import failure")
+            return _respond(self, 503, {"error": "External booking import unavailable"})
 
     def log_message(self, format, *args):
         logger.info("FitBot sync request: " + format, *args)
