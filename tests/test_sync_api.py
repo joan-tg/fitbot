@@ -53,12 +53,14 @@ class FakeClient:
 
     def get_classes(self, target_day, family_id=None):
         self.days.append(target_day.date())
-        return [{
-            "timeid": "1315_60",
-            "className": "Open Box",
-            "bookState": self.book_state,
-            "id": "class-1",
-        }]
+        return [
+            {
+                "timeid": "1315_60",
+                "className": "Open Box",
+                "bookState": self.book_state,
+                "id": "class-1",
+            }
+        ]
 
 
 def test_sync_checks_confirmed_future_bookings_without_writes(monkeypatch):
@@ -182,13 +184,17 @@ def test_sync_marks_zero_and_null_as_cancelled_in_fitbot(monkeypatch):
         def __init__(self):
             self.updates = []
 
-        def update_booking_status(self, booking_id, status, expected_statuses, metadata):
-            self.updates.append({
-                "booking_id": booking_id,
-                "status": status,
-                "expected_statuses": expected_statuses,
-                "metadata": metadata,
-            })
+        def update_booking_status(
+            self, booking_id, status, expected_statuses, metadata
+        ):
+            self.updates.append(
+                {
+                    "booking_id": booking_id,
+                    "status": status,
+                    "expected_statuses": expected_statuses,
+                    "metadata": metadata,
+                }
+            )
             return {"id": booking_id, "status": status}
 
     for state in (0, None):
