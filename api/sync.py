@@ -267,9 +267,13 @@ class handler(BaseHTTPRequestHandler):
             now = datetime.now(timezone)
             store = UpstashRedis()
             records = store.list_bookings(limit=UpstashRedis.BOOKINGS_MAX_ITEMS)
+            is_preview = os.environ.get("VERCEL_ENV") == "preview"
+            # Preview may share Production Redis on the free Upstash tier.
+            # It can inspect bookings and AimHarder, but must never write to Redis.
             result = _check_confirmed_bookings(
-                config, records, now, booking_store=store
+                config, records, now, booking_store=None if is_preview else store
             )
+            result["read_only"] = is_preview
             reason_counts = defaultdict(int)
             for item in result["unverified"]:
                 reason_counts[item.get("reason", "unknown")] += 1
