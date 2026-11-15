@@ -4,7 +4,6 @@ import hashlib
 import hmac
 import json
 import logging
-import re
 import os
 import sys
 from collections import defaultdict
