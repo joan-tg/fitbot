@@ -493,7 +493,6 @@ def test_import_endpoint_requires_admin_authentication(monkeypatch):
 def test_import_endpoint_rechecks_and_writes_only_in_production(monkeypatch):
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
     monkeypatch.setenv("VERCEL_ENV", "production")
-    fake_store = object()
     calls = {}
 
     class FakeRedis:
