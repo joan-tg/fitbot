@@ -73,7 +73,12 @@
     if(discrepancies.length) {
       el.classList.add("is-warning");
       const items=discrepancies.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
-      el.innerHTML="<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" confirmada"+(discrepancies.length===1?"":"s")+" que no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>No se ha cambiado ningún estado. Revisa estas discrepancias antes de actuar.</small>";
+      const synced=discrepancies.filter(item=>item.fitbot_status_updated).length;
+      const failed=discrepancies.length-synced;
+      const summary=synced
+        ? synced+" reserva"+(synced===1?"":"s")+" marcada"+(synced===1?"":"s")+" como cancelada"+(synced===1?"":"s")+" también en FitBot. El historial se conserva."
+        : "FitBot no ha podido actualizar el estado interno.";
+      el.innerHTML="<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" que ya no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+(failed?" "+failed+" no se han podido sincronizar.":"")+"</small>";
       el.hidden=false;
     } else if(unverified.length) {
       el.classList.add("is-warning");
@@ -177,7 +182,7 @@
     });
     const records = state.bookings.filter(b=>b.status!=="replaced").map(b=>{
       const result=resultById.get(b.id);
-      return {...b,...(result||{}),id:b.id,status:result?.status||b.status,name:b.name||result?.class||result?.name||"Reserva",date:b.date||result?.date,time:b.time||result?.time,person_id:b.person_id||result?.person_id,recorded_at:result?.recorded_at||b.updated_at||b.created_at};
+      return {...b,...(result||{}),id:b.id,status:b.status==="cancelled"?b.status:(result?.status||b.status),name:b.name||result?.class||result?.name||"Reserva",date:b.date||result?.date,time:b.time||result?.time,person_id:b.person_id||result?.person_id,recorded_at:result?.recorded_at||b.updated_at||b.created_at};
     });
     const knownIds = new Set(state.bookings.map(booking=>booking.id));
     state.results.filter(r=>!r.booking_id || !knownIds.has(r.booking_id)).forEach((r,index)=>{
