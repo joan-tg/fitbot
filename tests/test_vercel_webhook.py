@@ -457,8 +457,8 @@ def test_dynamic_booking_loads_redis_record_claims_and_records_dry_run(monkeypat
         def record_booking_result(self, record):
             events.append(("history", record["status"], record["person_id"]))
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
@@ -530,8 +530,8 @@ def test_qstash_delivery_recovers_unconfirmed_publication_status(
         def record_booking_result(self, record):
             calls.append(("history", record["status"]))
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
@@ -611,7 +611,7 @@ def test_dynamic_booking_lock_contention_is_retried_not_acknowledged(monkeypatch
             stored["status"] = status
             return dict(stored)
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("VERCEL_ENV", "production")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
@@ -660,8 +660,8 @@ def test_expired_dynamic_booking_is_marked_missed_and_recorded(monkeypatch):
         def acquire(self, *args, **kwargs):
             pytest.fail("expired bookings must not contact AimHarder")
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "load_config", lambda path: _dynamic_config())
     monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
@@ -814,8 +814,8 @@ def test_legacy_static_booking_in_preview_is_forced_to_dry_run(monkeypatch):
         calls.append(("run", force_dry_run))
         return {"status": "completed", "outcomes": [{"status": "dry_run"}]}
 
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("DRY_RUN", "true")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
     monkeypatch.setattr(book_api, "_is_booking_due", lambda *args: True)
     monkeypatch.setattr(
