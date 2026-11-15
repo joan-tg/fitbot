@@ -47,13 +47,14 @@ def config():
 
 
 class FakeClient:
-    def __init__(self, book_state=1, **kwargs):
+    def __init__(self, book_state=1, classes=None, **kwargs):
         self.book_state = book_state
+        self.classes = classes
         self.days = []
 
     def get_classes(self, target_day, family_id=None):
         self.days.append(target_day.date())
-        return [
+        return self.classes if self.classes is not None else [
             {
                 "timeid": "1315_60",
                 "className": "Open Box",
@@ -217,3 +218,89 @@ def test_sync_marks_zero_and_null_as_cancelled_in_fitbot(monkeypatch):
             sync_api.CONFIRMED_STATUSES
         )
         assert store.updates[0]["metadata"]["error_code"] == "cancelled_in_aimharder"
+
+
+
+def test_sync_requires_exact_class_name_match(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class SimilarClassClient(FakeClient):
+        def get_classes(self, target_day, family_id=None):
+            return [
+                {
+                    "timeid": "1315_60",
+                    "className": "Open Box Strength",
+                    "bookState": 0,
+                    "id": "wrong-class",
+                }
+            ]
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: SimilarClassClient(**kwargs),
+    )
+
+    assert result["discrepancies"] == []
+    assert result["unverified"][0]["reason"] == "class_not_resolved"
+
+
+def test_sync_accepts_case_and_whitespace_normalization_for_exact_name(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class NormalizedExactClient(FakeClient):
+        def get_classes(self, target_day, family_id=None):
+            return [
+                {
+                    "timeid": "1315_60",
+                    "className": "  OPEN   BOX ",
+                    "bookState": 1,
+                    "id": "class-1",
+                }
+            ]
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: NormalizedExactClient(**kwargs),
+    )
+
+    assert result["checked"] == 1
+    assert result["discrepancies"] == []
+    assert result["unverified"] == []
+
+
+def test_sync_treats_duplicate_exact_matches_as_unverified(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class DuplicateClassClient(FakeClient):
+        def get_classes(self, target_day, family_id=None):
+            return [
+                {
+                    "timeid": "1315_60",
+                    "className": "Open Box",
+                    "bookState": 0,
+                    "id": "class-1",
+                },
+                {
+                    "timeid": "1315_45",
+                    "className": "Open Box",
+                    "bookState": 1,
+                    "id": "class-2",
+                },
+            ]
+
+    result = sync_api._check_confirmed_bookings(
+        config(),
+        [record()],
+        NOW,
+        client_factory=lambda **kwargs: DuplicateClassClient(**kwargs),
+    )
+
+    assert result["discrepancies"] == []
+    assert result["unverified"][0]["reason"] == "class_not_resolved"
