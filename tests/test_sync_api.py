@@ -222,7 +222,6 @@ def test_sync_marks_zero_and_null_as_cancelled_in_fitbot(monkeypatch):
         assert store.updates[0]["metadata"]["error_code"] == "cancelled_in_aimharder"
 
 
-
 def test_sync_requires_exact_class_name_match(monkeypatch):
     monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
     monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
