@@ -172,3 +172,40 @@ def test_sync_ignores_past_and_unconfirmed_records(monkeypatch):
     assert result["checked"] == 0
     assert result["discrepancies"] == []
     assert result["unverified"] == []
+
+
+def test_sync_marks_zero_and_null_as_cancelled_in_fitbot(monkeypatch):
+    monkeypatch.setenv("AIMHARDER_PERSON_1_EMAIL", "one@example.test")
+    monkeypatch.setenv("AIMHARDER_PERSON_1_PASSWORD", "password")
+
+    class FakeStore:
+        def __init__(self):
+            self.updates = []
+
+        def update_booking_status(self, booking_id, status, expected_statuses, metadata):
+            self.updates.append({
+                "booking_id": booking_id,
+                "status": status,
+                "expected_statuses": expected_statuses,
+                "metadata": metadata,
+            })
+            return {"id": booking_id, "status": status}
+
+    for state in (0, None):
+        store = FakeStore()
+        result = sync_api._check_confirmed_bookings(
+            config(),
+            [record()],
+            NOW,
+            client_factory=lambda **kwargs: FakeClient(book_state=state, **kwargs),
+            booking_store=store,
+        )
+
+        assert result["checked"] == 1
+        assert result["read_only"] is False
+        assert len(result["discrepancies"]) == 1
+        assert result["discrepancies"][0]["fitbot_status_updated"] is True
+        assert len(store.updates) == 1
+        assert store.updates[0]["status"] == "cancelled"
+        assert store.updates[0]["expected_statuses"] == sorted(sync_api.CONFIRMED_STATUSES)
+        assert store.updates[0]["metadata"]["error_code"] == "cancelled_in_aimharder"
