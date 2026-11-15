@@ -86,7 +86,7 @@ def test_sync_checks_confirmed_future_bookings_without_writes(monkeypatch):
     assert result["checked"] == 1
     assert result["discrepancies"] == []
     assert result["unverified"] == []
-    assert result["read_only"] is True
+    assert result["fitbot_updates_enabled"] is False
     assert len(clients) == 1
     assert clients[0].days == [NOW.date().replace(day=16)]
 
@@ -211,7 +211,7 @@ def test_sync_marks_zero_and_null_as_cancelled_in_fitbot(monkeypatch):
         )
 
         assert result["checked"] == 1
-        assert result["read_only"] is False
+        assert result["fitbot_updates_enabled"] is True
         assert len(result["discrepancies"]) == 1
         assert result["discrepancies"][0]["fitbot_status_updated"] is True
         assert len(store.updates) == 1
