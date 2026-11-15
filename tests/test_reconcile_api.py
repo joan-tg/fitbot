@@ -200,8 +200,10 @@ def test_reconcile_endpoint_accepts_admin_token(monkeypatch):
     response = request.get()
 
     assert request.status == 200
-    assert response["status"] == "completed"
+    assert response["status"] == "preview_read_only"
     assert response["scanned"] == 0
+    assert response["republished"] == 0
+    assert response["missed"] == 0
 
 
 def test_reconcile_endpoint_rejects_unauthorized_request(monkeypatch):
