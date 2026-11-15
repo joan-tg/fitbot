@@ -218,7 +218,7 @@ def test_reconcile_endpoint_rejects_unauthorized_request(monkeypatch):
 
 
 def test_reconcile_endpoint_accepts_signed_qstash_post(monkeypatch):
-    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("VERCEL_ENV", "production")
     request = FakeHandler(token="not-used", payload={"task": "reconcile"})
     monkeypatch.setattr(reconcile_api, "_verify_qstash", lambda handler, body: True)
     monkeypatch.setattr(
