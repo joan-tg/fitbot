@@ -214,12 +214,16 @@ class handler(BaseHTTPRequestHandler):
                 limit=UpstashRedis.BOOKINGS_MAX_ITEMS
             )
             result = _check_confirmed_bookings(config, records, now)
+            reason_counts = defaultdict(int)
+            for item in result["unverified"]:
+                reason_counts[item.get("reason", "unknown")] += 1
             logger.info(
                 "Read-only booking sync completed: checked=%s "
-                "discrepancies=%s unverified=%s",
+                "discrepancies=%s unverified=%s reasons=%s",
                 result["checked"],
                 len(result["discrepancies"]),
                 len(result["unverified"]),
+                dict(reason_counts),
             )
             return _respond(self, 200, result)
         except RedisUnavailable:
