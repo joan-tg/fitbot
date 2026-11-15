@@ -104,7 +104,7 @@ def test_sync_reports_absent_booking_as_discrepancy_not_cancellation(monkeypatch
 
     assert len(result["discrepancies"]) == 1
     assert result["discrepancies"][0]["reason"] == "not_booked_in_aimharder"
-    assert result["read_only"] is True
+    assert result["fitbot_updates_enabled"] is False
 
 
 def test_sync_does_not_treat_unresolved_class_as_cancellation(monkeypatch):
