@@ -378,7 +378,7 @@ def test_endpoint_requires_admin_authentication(monkeypatch):
 
 def test_endpoint_rejects_missing_idempotency_key(monkeypatch):
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
-    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("VERCEL_ENV", "production")
     request = FakeHandler(VALID_PAYLOAD, idempotency_key="short")
 
     response = request.post()
@@ -400,7 +400,7 @@ def _patch_payload():
 def _configure_patch_endpoint(monkeypatch):
     _freeze_booking_build_time(monkeypatch)
     monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
-    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("VERCEL_ENV", "production")
     monkeypatch.setenv("QSTASH_TOKEN", "qstash-test-token")
     monkeypatch.setenv("FITBOT_WEBHOOK_URL", "https://preview.example/api/book")
     monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-bypass")
