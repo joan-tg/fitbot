@@ -91,9 +91,7 @@
     const externalBookings=result.external_bookings||[];
     if(externalBookings.length) {
       const items=externalBookings.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
-      const summary=result.read_only
-        ? externalBookings.length+" reserva"+(externalBookings.length===1?"":"s")+" externa"+(externalBookings.length===1?" detectada":"s detectadas")+". No se han importado porque Preview es de solo lectura."
-        : (result.imported||0)+" reserva"+((result.imported||0)===1?"":"s")+" importada"+((result.imported||0)===1?"":"s")+" en FitBot como ya reservada"+((result.imported||0)===1?"":"s")+". No se han enviado nuevas reservas a AimHarder ni a QStash.";
+      const summary=externalBookings.length+" reserva"+(externalBookings.length===1?" externa detectada":"s externas detectadas")+". Pendientes de importación autorizada; esta consulta no ha importado ninguna ni ha enviado reservas a AimHarder o QStash.";
       sections.push("<strong>Reservas encontradas directamente en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+"</small>");
     }
     if(unverified.length) {
