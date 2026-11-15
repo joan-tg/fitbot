@@ -203,7 +203,8 @@ def _check_confirmed_bookings(
                         discrepancy["fitbot_status_updated"] = updated is not None
                     except Exception:
                         logger.exception(
-                            "Could not synchronize external cancellation for booking %s",
+                            "Could not synchronize external cancellation for "
+                            "booking %s",
                             booking.get("id"),
                         )
                         discrepancy["fitbot_status_updated"] = False
