@@ -1,12 +1,13 @@
 """Reconcile confirmed future bookings against AimHarder on dashboard entry."""
 
+import hashlib
 import hmac
 import json
 import logging
 import os
 import sys
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -247,6 +248,191 @@ def _check_confirmed_bookings(
         "discrepancies": discrepancies,
         "unverified": unverified,
         "fitbot_updates_enabled": booking_store is not None,
+    }
+
+
+DISCOVERY_DAYS = 7
+
+
+def _booking_identity(person_id, target_date, target_time, name):
+    return (
+        person_id,
+        target_date.isoformat() if hasattr(target_date, "isoformat") else str(target_date),
+        str(target_time).strip(),
+        " ".join(str(name).split()).casefold(),
+    )
+
+
+def _discover_external_bookings(
+    config, records, now, client_factory=None, booking_store=None
+):
+    """Discover future AimHarder bookings and import them without scheduling."""
+    client_factory = client_factory or AimHarderClient
+    timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
+    existing = {
+        _booking_identity(
+            item.get("person_id"), item.get("date"), item.get("time"), item.get("name")
+        )
+        for item in records
+        if isinstance(item, dict)
+        and item.get("person_id")
+        and item.get("date")
+        and item.get("time")
+        and item.get("name")
+    }
+    activity_names = {}
+    for activity_type in ("class", "open_box"):
+        for name in config.get("activities", {}).get(activity_type, []):
+            activity_names[" ".join(str(name).split()).casefold()] = (
+                " ".join(str(name).split()),
+                activity_type,
+            )
+
+    detected = []
+    imported = []
+    already_tracked = 0
+    unverified = []
+
+    for person_id, member in config.get("members", {}).items():
+        credentials = member.get("aimharder_credentials", {})
+        email_env = credentials.get("email_env")
+        password_env = credentials.get("password_env")
+        email = os.environ.get(email_env) if email_env else None
+        password = os.environ.get(password_env) if password_env else None
+        if not email or not password:
+            unverified.append(
+                {"person_id": person_id, "reason": "credentials_unavailable"}
+            )
+            continue
+        try:
+            client = client_factory(
+                email=email,
+                password=password,
+                box_id=int(config["box_id"]),
+                box_name=config["box_name"],
+                proxy=os.environ.get("PROXY") or None,
+            )
+        except Exception:
+            logger.exception("AimHarder login failed during external booking discovery")
+            unverified.append(
+                {"person_id": person_id, "reason": "account_unavailable"}
+            )
+            continue
+
+        for offset in range(DISCOVERY_DAYS + 1):
+            target_date = now.astimezone(timezone).date() + timedelta(days=offset)
+            target_day = datetime.combine(
+                target_date, datetime.min.time(), tzinfo=timezone
+            )
+            try:
+                classes = client.get_classes(target_day, config.get("family_id"))
+            except Exception:
+                logger.exception(
+                    "AimHarder discovery lookup failed for %s on %s",
+                    person_id,
+                    target_date,
+                )
+                unverified.append(
+                    {
+                        "person_id": person_id,
+                        "date": target_date.isoformat(),
+                        "reason": "classes_unavailable",
+                    }
+                )
+                continue
+
+            grouped = defaultdict(list)
+            for item in classes:
+                if not isinstance(item, dict) or item.get("bookState") != 1:
+                    continue
+                raw_name = item.get("className")
+                if not isinstance(raw_name, str):
+                    continue
+                configured = activity_names.get(" ".join(raw_name.split()).casefold())
+                if configured is None:
+                    continue
+                raw_time = str(item.get("timeid", "")).split("_", 1)[0]
+                if len(raw_time) != 4 or not raw_time.isdigit():
+                    continue
+                try:
+                    class_time = datetime.strptime(raw_time, "%H%M").time()
+                except ValueError:
+                    continue
+                class_start = datetime.combine(target_date, class_time, tzinfo=timezone)
+                if class_start <= now.astimezone(timezone):
+                    continue
+                canonical_name, activity_type = configured
+                identity = _booking_identity(
+                    person_id, target_date, class_time.strftime("%H:%M"), canonical_name
+                )
+                grouped[identity].append(
+                    (class_start, canonical_name, activity_type)
+                )
+
+            for identity, matches in grouped.items():
+                if len(matches) != 1:
+                    unverified.append(
+                        {
+                            "person_id": person_id,
+                            "date": target_date.isoformat(),
+                            "time": identity[2],
+                            "name": identity[3],
+                            "reason": "ambiguous_external_class",
+                        }
+                    )
+                    continue
+                if identity in existing:
+                    already_tracked += 1
+                    continue
+
+                class_start, canonical_name, activity_type = matches[0]
+                booking_id = hashlib.sha256(
+                    "|".join(identity).encode("utf-8")
+                ).hexdigest()[:32]
+                booking = {
+                    "id": booking_id,
+                    "person_id": person_id,
+                    "date": target_date.isoformat(),
+                    "time": class_start.strftime("%H:%M"),
+                    "name": canonical_name,
+                    "activity_type": activity_type,
+                    "opens_at": class_start.isoformat(timespec="seconds"),
+                    "status": "already_booked",
+                    "created_at": now.astimezone(timezone).isoformat(
+                        timespec="seconds"
+                    ),
+                }
+                candidate = {
+                    "person_id": person_id,
+                    "date": booking["date"],
+                    "time": booking["time"],
+                    "name": booking["name"],
+                }
+                detected.append(candidate)
+                if booking_store is not None:
+                    try:
+                        if booking_store.create_booking(booking):
+                            imported.append(candidate)
+                            existing.add(identity)
+                        else:
+                            already_tracked += 1
+                            existing.add(identity)
+                    except Exception:
+                        logger.exception(
+                            "Could not import external booking for %s on %s",
+                            person_id,
+                            target_date,
+                        )
+                        unverified.append(
+                            {**candidate, "reason": "fitbot_import_failed"}
+                        )
+
+    return {
+        "external_bookings": detected,
+        "imported": len(imported),
+        "already_tracked": already_tracked,
+        "discovery_unverified": unverified,
+        "import_writes_enabled": booking_store is not None,
     }
 
 
