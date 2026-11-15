@@ -92,7 +92,10 @@
     if(externalBookings.length) {
       const items=externalBookings.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
       const summary=externalBookings.length+" reserva"+(externalBookings.length===1?" externa detectada":"s externas detectadas")+". Pendientes de importación autorizada; esta consulta no ha importado ninguna ni ha enviado reservas a AimHarder o QStash.";
-      sections.push("<strong>Reservas encontradas directamente en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+"</small>");
+      const importAction=!result.read_only
+        ? '<button class="outline-button import-external-button" type="button" data-import-external="true">Importar '+externalBookings.length+' reservas en FitBot</button>'
+        : "";
+      sections.push("<strong>Reservas encontradas directamente en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+"</small>"+importAction);
     }
     if(unverified.length) {
       const items=unverified.map(item=>{
@@ -343,17 +346,48 @@
   }
   $("refresh-button").addEventListener("click",refresh);
   $("refresh-inline").addEventListener("click",refresh);
-  $("show-calendar").addEventListener("click",()=>{
-    $("calendar-panel").hidden=false;$("history-panel").hidden=true;
-    $("show-calendar").classList.add("is-active");$("show-history").classList.remove("is-active");
-    $("show-calendar").setAttribute("aria-pressed","true");$("show-history").setAttribute("aria-pressed","false");
-    renderCalendar();
+  $("sync-notice").addEventListener("click",async(event)=>{
+    const button=event.target.closest("[data-import-external]");
+    if(!button || button.disabled) return;
+    if(!confirm("Se volverán a consultar las cuentas de AimHarder y se registrarán en FitBot únicamente las reservas que sigan confirmadas. No se crearán ni cancelarán reservas en AimHarder y no se programará ninguna tarea. ¿Continuar?")) return;
+    button.disabled=true;
+    button.textContent="Comprobando e importando…";
+    try {
+      const result=await request(API.sync,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({confirm_import:true})
+      });
+      await refreshAll();
+      const imported=result.imported||0;
+      const failed=(result.discovery_unverified||[]).length;
+      renderSyncNotice({
+        read_only:false,
+        external_bookings:result.imported_bookings||[],
+        imported,
+        discovery_unverified:result.discovery_unverified||[],
+        discrepancies:[]
+      });
+      toast(imported+" reserva"+(imported===1?" importada":"s importadas")+" en FitBot"+(failed?"; "+failed+" sin verificar":""));
+      if(!imported && !failed) $("sync-notice").hidden=true;
+    } catch(error) {
+      button.disabled=false;
+      button.textContent="Reintentar importación";
+      toast(error.message);
+    }
   });
-  $("show-history").addEventListener("click",()=>{
-    $("calendar-panel").hidden=true;$("history-panel").hidden=false;
-    $("show-history").classList.add("is-active");$("show-calendar").classList.remove("is-active");
-    $("show-history").setAttribute("aria-pressed","true");$("show-calendar").setAttribute("aria-pressed","false");
-  });
+  function setAgendaView(view) {
+    const showCalendar=view==="calendar";
+    $("calendar-panel").hidden=!showCalendar;
+    $("history-panel").hidden=showCalendar;
+    $("show-calendar").classList.toggle("is-active",showCalendar);
+    $("show-history").classList.toggle("is-active",!showCalendar);
+    $("show-calendar").setAttribute("aria-pressed",String(showCalendar));
+    $("show-history").setAttribute("aria-pressed",String(!showCalendar));
+    if(showCalendar) renderCalendar();
+  }
+  $("show-calendar").addEventListener("click",()=>setAgendaView("calendar"));
+  $("show-history").addEventListener("click",()=>setAgendaView("history"));
   $("calendar-prev").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth-1));
   $("calendar-next").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth+1));
   $("calendar-today").addEventListener("click",()=>setCalendarMonth(new Date().getFullYear(),new Date().getMonth()));
