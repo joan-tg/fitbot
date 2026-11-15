@@ -57,7 +57,7 @@
     if(!result) return;
     if(result.error) {
       el.classList.add("is-warning");
-      el.textContent="No se pudo comprobar AimHarder en esta entrada. Los datos de FitBot no se han modificado.";
+      el.textContent="No se ha podido completar la sincronización con AimHarder. Comprueba el estado de las reservas antes de tomar decisiones; podría haber cambios parciales.";
       el.hidden=false;
       return;
     }
@@ -67,28 +67,32 @@
       credentials_unavailable:"credenciales no disponibles",
       account_unavailable:"cuenta no disponible",
       classes_unavailable:"AimHarder no ha devuelto las clases",
-      class_not_resolved:"no se ha podido localizar esa clase en AimHarder",
-      unknown_booking_state:"AimHarder ha devuelto un estado de reserva desconocido"
+      class_not_resolved:"no se ha encontrado una coincidencia exacta de la clase",
+      unknown_booking_state:"AimHarder ha devuelto un estado de reserva desconocido",
+      fitbot_status_update_failed:"no se ha podido actualizar el estado interno de FitBot"
     };
+    const sections=[];
     if(discrepancies.length) {
-      el.classList.add("is-warning");
       const items=discrepancies.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
       const synced=discrepancies.filter(item=>item.fitbot_status_updated).length;
       const failed=discrepancies.length-synced;
       const summary=synced
         ? synced+" reserva"+(synced===1?"":"s")+" marcada"+(synced===1?"":"s")+" como cancelada"+(synced===1?"":"s")+" también en FitBot. El historial se conserva."
         : "FitBot no ha podido actualizar el estado interno.";
-      el.innerHTML="<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" que ya no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+(failed?" "+failed+" no se han podido sincronizar.":"")+"</small>";
-      el.hidden=false;
-    } else if(unverified.length) {
-      el.classList.add("is-warning");
+      sections.push("<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" que ya no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+(failed?" "+failed+" no se han podido sincronizar.":"")+"</small>");
+    }
+    if(unverified.length) {
       const items=unverified.map(item=>{
         const diagnostic=item.reason==="unknown_booking_state"
           ? " (bookState: "+escapeHtml(String(item.observed_book_state))+" · tipo "+escapeHtml(item.observed_book_state_type||"desconocido")+")"
           : "";
         return "<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+" — "+escapeHtml(reasonLabels[item.reason]||"motivo no identificado")+diagnostic+"</li>";
       }).join("");
-      el.innerHTML="<strong>Hay "+unverified.length+" reserva"+(unverified.length===1?"":"s")+" que no se han podido verificar.</strong><ul>"+items+"</ul><small>"+result.checked+" verificadas. No se ha modificado ningún estado ni se ha asumido que estén canceladas.</small>";
+      sections.push("<strong>Hay "+unverified.length+" reserva"+(unverified.length===1?"":"s")+" que no se han podido verificar.</strong><ul>"+items+"</ul><small>"+result.checked+" verificadas. Estas reservas no se han marcado como canceladas.</small>");
+    }
+    if(sections.length) {
+      el.classList.add("is-warning");
+      el.innerHTML=sections.join("<hr>");
       el.hidden=false;
     } else if(result.checked) {
       toast("Sincronización completada: "+result.checked+" reserva"+(result.checked===1?"":"s")+" verificadas.");
