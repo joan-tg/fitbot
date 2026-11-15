@@ -466,7 +466,9 @@ class handler(BaseHTTPRequestHandler):
                 config,
                 records,
                 now,
-                booking_store=None if is_preview else store,
+                # Discovery is always read-only. A separate, explicitly
+                # authorized action will perform any Production import.
+                booking_store=None,
             )
             result["unverified"].extend(discovery.pop("discovery_unverified"))
             result.update(discovery)
