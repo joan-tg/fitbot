@@ -257,7 +257,11 @@ DISCOVERY_DAYS = 7
 def _booking_identity(person_id, target_date, target_time, name):
     return (
         person_id,
-        target_date.isoformat() if hasattr(target_date, "isoformat") else str(target_date),
+        (
+            target_date.isoformat()
+            if hasattr(target_date, "isoformat")
+            else str(target_date)
+        ),
         str(target_time).strip(),
         " ".join(str(name).split()).casefold(),
     )
