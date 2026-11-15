@@ -370,9 +370,7 @@ def _discover_external_bookings(
                     class_time.strftime("%H:%M"),
                     canonical_name,
                 )
-                grouped[identity].append(
-                    (class_start, canonical_name, activity_type)
-                )
+                grouped[identity].append((class_start, canonical_name, activity_type))
 
             for identity, matches in grouped.items():
                 if len(matches) != 1:
