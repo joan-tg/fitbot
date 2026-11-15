@@ -78,8 +78,9 @@ def test_schedule_is_blocked_in_preview(monkeypatch):
     request = FakeHandler({"date": "2099-01-01"})
     response = request.post()
     assert request.status == 403
-    assert "read-only" in response["error"] or "disabled" in response["error"]
-
+    assert (
+        "read-only" in response["error"] or "disabled" in response["error"]
+    )
 
 
 def test_schedule_rejects_unknown_booking(monkeypatch):
