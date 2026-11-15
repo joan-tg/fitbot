@@ -213,5 +213,7 @@ def test_sync_marks_zero_and_null_as_cancelled_in_fitbot(monkeypatch):
         assert result["discrepancies"][0]["fitbot_status_updated"] is True
         assert len(store.updates) == 1
         assert store.updates[0]["status"] == "cancelled"
-        assert store.updates[0]["expected_statuses"] == sorted(sync_api.CONFIRMED_STATUSES)
+        assert store.updates[0]["expected_statuses"] == sorted(
+            sync_api.CONFIRMED_STATUSES
+        )
         assert store.updates[0]["metadata"]["error_code"] == "cancelled_in_aimharder"
