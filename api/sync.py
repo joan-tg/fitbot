@@ -175,6 +175,14 @@ def _check_confirmed_bookings(config, records, now, client_factory=None):
                     }
                 )
             else:
+                raw_state = selected.get("bookState")
+                # Expose only this single API field for diagnosis; never log the
+                # full AimHarder class payload or account information.
+                state_value = (
+                    raw_state
+                    if raw_state is None or isinstance(raw_state, (int, float, bool))
+                    else str(raw_state)[:40]
+                )
                 unverified.append(
                     {
                         "booking_id": booking.get("id"),
@@ -183,6 +191,8 @@ def _check_confirmed_bookings(config, records, now, client_factory=None):
                         "time": booking.get("time"),
                         "name": booking.get("name"),
                         "reason": "unknown_booking_state",
+                        "observed_book_state": state_value,
+                        "observed_book_state_type": type(raw_state).__name__,
                     }
                 )
 
