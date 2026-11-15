@@ -16,7 +16,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.results")
-PREVIEW_READ_ONLY_ERROR = "Preview is read-only; shared Production Redis cannot be modified"
+PREVIEW_READ_ONLY_ERROR = (
+    "Preview is read-only; shared Production Redis cannot be modified"
+)
 
 
 def _response(handler, status, payload):
