@@ -69,7 +69,9 @@
       classes_unavailable:"AimHarder no ha devuelto las clases",
       class_not_resolved:"no se ha encontrado una coincidencia exacta de la clase",
       unknown_booking_state:"AimHarder ha devuelto un estado de reserva desconocido",
-      fitbot_status_update_failed:"no se ha podido actualizar el estado interno de FitBot"
+      fitbot_status_update_failed:"no se ha podido actualizar el estado interno de FitBot",
+      ambiguous_external_class:"la clase reservada aparece duplicada en AimHarder",
+      fitbot_import_failed:"AimHarder confirma la reserva, pero no se ha podido guardar en FitBot"
     };
     const sections=[];
     if(result.read_only) {
@@ -85,6 +87,14 @@
           ? synced+" reserva"+(synced===1?"":"s")+" marcada"+(synced===1?"":"s")+" como cancelada"+(synced===1?"":"s")+" también en FitBot. El historial se conserva."
           : "FitBot no ha podido actualizar el estado interno.";
       sections.push("<strong>Se han detectado "+discrepancies.length+" reserva"+(discrepancies.length===1?"":"s")+" que ya no aparece"+(discrepancies.length===1?"":"n")+" como reservada en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+(failed?" "+failed+" no se han podido sincronizar.":"")+"</small>");
+    }
+    const externalBookings=result.external_bookings||[];
+    if(externalBookings.length) {
+      const items=externalBookings.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
+      const summary=result.read_only
+        ? externalBookings.length+" reserva"+(externalBookings.length===1?"":"s")+" externa"+(externalBookings.length===1?" detectada":"s detectadas")+". No se han importado porque Preview es de solo lectura."
+        : (result.imported||0)+" reserva"+((result.imported||0)===1?"":"s")+" importada"+((result.imported||0)===1?"":"s")+" en FitBot como ya reservada"+((result.imported||0)===1?"":"s")+". No se han enviado nuevas reservas a AimHarder ni a QStash.";
+      sections.push("<strong>Reservas encontradas directamente en AimHarder:</strong><ul>"+items+"</ul><small>"+summary+"</small>");
     }
     if(unverified.length) {
       const items=unverified.map(item=>{
