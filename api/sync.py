@@ -118,7 +118,7 @@ def _check_confirmed_bookings(
                 )
             except Exception:
                 logger.exception(
-                    "AimHarder login failed during read-only sync for %s", person_id
+                    "AimHarder login failed during dashboard sync for %s", person_id
                 )
                 clients[person_id] = None
         client = clients[person_id]
@@ -246,7 +246,7 @@ def _check_confirmed_bookings(
         "checked": checked,
         "discrepancies": discrepancies,
         "unverified": unverified,
-        "read_only": booking_store is None,
+        "fitbot_updates_enabled": booking_store is not None,
     }
 
 
