@@ -1,3 +1,5 @@
+import io
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -436,3 +438,94 @@ def test_external_discovery_imports_idempotently_without_scheduling(monkeypatch)
     assert second["external_bookings"] == []
     assert second["imported"] == 0
     assert second["already_tracked"] == 10
+
+
+
+class PostHandler:
+    def __init__(self, payload=None, token="Bearer admin"):
+        body = json.dumps(payload or {}).encode("utf-8")
+        self.headers = {"Authorization": token, "Content-Length": str(len(body))}
+        self.rfile = io.BytesIO(body)
+        self.wfile = io.BytesIO()
+        self.status = None
+        self.headers_sent = {}
+
+    def send_response(self, status):
+        self.status = status
+
+    def send_header(self, name, value):
+        self.headers_sent[name] = value
+
+    def end_headers(self):
+        pass
+
+
+def test_import_endpoint_rejects_preview_even_with_confirmation(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    request = PostHandler({"confirm_import": True})
+    sync_api.handler.do_POST(request)
+    assert request.status == 403
+    assert json.loads(request.wfile.getvalue())["error"] == (
+        "External booking import is Production-only"
+    )
+
+
+def test_import_endpoint_requires_explicit_confirmation(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    request = PostHandler({"confirm_import": False})
+    sync_api.handler.do_POST(request)
+    assert request.status == 400
+    assert json.loads(request.wfile.getvalue())["error"] == (
+        "Explicit confirmation is required"
+    )
+
+
+def test_import_endpoint_requires_admin_authentication(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    request = PostHandler({"confirm_import": True}, token="Bearer wrong")
+    sync_api.handler.do_POST(request)
+    assert request.status == 401
+
+
+def test_import_endpoint_rechecks_and_writes_only_in_production(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    fake_store = object()
+    calls = {}
+
+    class FakeRedis:
+        BOOKINGS_MAX_ITEMS = 500
+
+        def __init__(self):
+            pass
+
+        def list_bookings(self, limit):
+            calls["limit"] = limit
+            return []
+
+    def discover(config_value, records, now, booking_store=None):
+        calls["store"] = booking_store
+        return {
+            "external_bookings": [{"person_id": "person_1"}],
+            "imported": 1,
+            "imported_bookings": [{"person_id": "person_1"}],
+            "already_tracked": 0,
+            "discovery_unverified": [],
+            "import_writes_enabled": booking_store is not None,
+        }
+
+    monkeypatch.setattr(sync_api, "load_config", lambda path: _discovery_config())
+    monkeypatch.setattr(sync_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(sync_api, "_discover_external_bookings", discover)
+    request = PostHandler({"confirm_import": True})
+    sync_api.handler.do_POST(request)
+
+    payload = json.loads(request.wfile.getvalue())
+    assert request.status == 200
+    assert calls["limit"] == 500
+    assert calls["store"] is not None
+    assert payload["imported"] == 1
+    assert payload["read_only"] is False
