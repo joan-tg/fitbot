@@ -317,7 +317,9 @@ def _discover_external_bookings(
                 proxy=os.environ.get("PROXY") or None,
             )
         except Exception:
-            logger.exception("AimHarder login failed during external booking discovery")
+            logger.exception(
+                "AimHarder login failed during external booking discovery"
+            )
             unverified.append(
                 {"person_id": person_id, "reason": "account_unavailable"}
             )
