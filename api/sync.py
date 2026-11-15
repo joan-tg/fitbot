@@ -1,4 +1,4 @@
-"""Read-only synchronization check for confirmed future bookings on dashboard entry."""
+"""Reconcile confirmed future bookings against AimHarder on dashboard entry."""
 
 import hmac
 import json
@@ -43,8 +43,10 @@ def _authorized(handler):
     )
 
 
-def _check_confirmed_bookings(config, records, now, client_factory=None):
-    """Compare only previously confirmed future bookings; never write to Redis."""
+def _check_confirmed_bookings(
+    config, records, now, client_factory=None, booking_store=None
+):
+    """Reconcile confirmed future bookings against AimHarder, preserving history."""
     client_factory = client_factory or AimHarderClient
     timezone = ZoneInfo(config.get("timezone", "Europe/Madrid"))
     grouped = defaultdict(list)
