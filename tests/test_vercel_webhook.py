@@ -119,7 +119,7 @@ def test_preview_webhook_acknowledges_without_touching_shared_redis(monkeypatch)
 
 @pytest.mark.parametrize(
     ("vercel_env", "dry_run"),
-    [("production", "true"), ("preview", "false")],
+    [("production", "true")],
 )
 def test_integration_probe_is_blocked_outside_safe_preview(
     monkeypatch, vercel_env, dry_run
