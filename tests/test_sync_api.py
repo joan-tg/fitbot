@@ -439,12 +439,13 @@ def test_external_discovery_imports_idempotently_without_scheduling(monkeypatch)
     assert second["imported"] == 0
     assert second["already_tracked"] == 10
 
-
-
 class PostHandler:
     def __init__(self, payload=None, token="Bearer admin"):
         body = json.dumps(payload or {}).encode("utf-8")
-        self.headers = {"Authorization": token, "Content-Length": str(len(body))}
+        self.headers = {
+            "Authorization": token,
+            "Content-Length": str(len(body)),
+        }
         self.rfile = io.BytesIO(body)
         self.wfile = io.BytesIO()
         self.status = None
