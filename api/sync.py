@@ -273,6 +273,14 @@ class handler(BaseHTTPRequestHandler):
             result = _check_confirmed_bookings(
                 config, records, now, booking_store=None if is_preview else store
             )
+            discovery = _discover_external_bookings(
+                config,
+                records,
+                now,
+                booking_store=None if is_preview else store,
+            )
+            result["unverified"].extend(discovery.pop("discovery_unverified"))
+            result.update(discovery)
             result["read_only"] = is_preview
             reason_counts = defaultdict(int)
             for item in result["unverified"]:
