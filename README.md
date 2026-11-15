@@ -65,6 +65,19 @@ curl --request POST "https://YOUR-PREVIEW-URL/api/schedule" \
 
 The endpoint checks that all four booking fields exactly match one entry in `reservas.json`, that the opening time is in the future and no more than seven days away, and that the deployment is Preview or Production. QStash schedules the signed webhook for that opening time and the endpoint returns its message ID. The response does not claim a dry-run/live mode: `/api/book` reads `DRY_RUN` when the message is delivered.
 
+## AimHarder booking synchronization
+
+The authenticated `GET /api/sync` endpoint runs when the dashboard session is opened (login or page reload). It checks future FitBot bookings already in a confirmed state against the corresponding AimHarder account.
+
+- It uses each member's own AimHarder credentials and reads the class list for each booked date.
+- A class is considered a match only when both its time and its complete name match (case-insensitive and whitespace-normalized). Partial matches and duplicate matches remain unverified.
+- `bookState=1` confirms the booking. `bookState=0` or `null` is treated as no longer booked; FitBot changes only its own matching confirmed record to `cancelled`, retaining the history. No AimHarder cancellation request is sent.
+- Missing classes, ambiguous matches, unknown states, unavailable credentials, and API errors remain unverified and are never treated as cancellations.
+- The sync can write to the Redis database configured for the current Vercel environment. Configure **different Upstash Redis databases** for Preview and Production; separate Vercel variable scopes alone do not guarantee that the values point to different databases.
+- Dashboard manual refresh does not trigger another AimHarder sync. The endpoint rejects `POST` and requires the administrative bearer token.
+
+Keep Preview isolated from Production and test it before merging. The sync does not create AimHarder bookings, call AimHarder cancellation endpoints, change QStash schedules, or change `DRY_RUN`.
+
 ## Using env files
 
 You can use env files for configuration and credentials instead of passing them directly on the command line:
