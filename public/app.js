@@ -63,6 +63,13 @@
     }
     const discrepancies=result.discrepancies||[];
     const unverified=result.unverified||[];
+    const reasonLabels={
+      credentials_unavailable:"credenciales no disponibles",
+      account_unavailable:"cuenta no disponible",
+      classes_unavailable:"AimHarder no ha devuelto las clases",
+      class_not_resolved:"no se ha podido localizar esa clase en AimHarder",
+      unknown_booking_state:"AimHarder ha devuelto un estado de reserva desconocido"
+    };
     if(discrepancies.length) {
       el.classList.add("is-warning");
       const items=discrepancies.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+"</li>").join("");
@@ -70,7 +77,8 @@
       el.hidden=false;
     } else if(unverified.length) {
       el.classList.add("is-warning");
-      el.textContent="Se han verificado "+result.checked+" reservas, pero otras "+unverified.length+" no han podido comprobarse. No se ha modificado ningún estado.";
+      const items=unverified.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+" — "+escapeHtml(reasonLabels[item.reason]||"motivo no identificado")+"</li>").join("");
+      el.innerHTML="<strong>Hay "+unverified.length+" reserva"+(unverified.length===1?"":"s")+" que no se han podido verificar.</strong><ul>"+items+"</ul><small>"+result.checked+" verificadas. No se ha modificado ningún estado ni se ha asumido que estén canceladas.</small>";
       el.hidden=false;
     } else if(result.checked) {
       toast("Sincronización completada: "+result.checked+" reserva"+(result.checked===1?"":"s")+" verificadas.");
