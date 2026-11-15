@@ -287,6 +287,23 @@ def _reconcile(redis, records, now, timezone, window_minutes, dry_run):
 
 class handler(BaseHTTPRequestHandler):
     def _run(self):
+        # Preview shares the single free-tier Upstash database with Production.
+        # Do not even inspect/reconcile records here: this endpoint mutates Redis
+        # and may publish QStash messages.
+        if os.environ.get("VERCEL_ENV") == "preview":
+            return _respond(
+                self,
+                200,
+                {
+                    "status": "preview_read_only",
+                    "scanned": 0,
+                    "republished": 0,
+                    "missed": 0,
+                    "outcome_unconfirmed": 0,
+                    "skipped": 0,
+                    "errors": 0,
+                },
+            )
         if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
             return _respond(
                 self,
