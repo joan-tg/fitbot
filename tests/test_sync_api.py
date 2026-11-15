@@ -54,7 +54,9 @@ class FakeClient:
 
     def get_classes(self, target_day, family_id=None):
         self.days.append(target_day.date())
-        return self.classes if self.classes is not None else [
+        if self.classes is not None:
+            return self.classes
+        return [
             {
                 "timeid": "1315_60",
                 "className": "Open Box",
