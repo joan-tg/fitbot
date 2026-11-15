@@ -541,6 +541,15 @@ class handler(BaseHTTPRequestHandler):
         if not valid:
             return _response(self, 401, {"error": "Invalid signature"})
 
+        # Preview shares Production Redis on the free Upstash tier. A signed
+        # queued delivery must be acknowledged without touching Redis or AimHarder.
+        if os.environ.get("VERCEL_ENV") == "preview":
+            return _response(
+                self,
+                200,
+                {"status": "preview_read_only", "booking_executed": False},
+            )
+
         try:
             payload = json.loads(raw_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
