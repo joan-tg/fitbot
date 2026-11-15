@@ -319,7 +319,11 @@ def _discovery_config():
 def _weekly_classes():
     return {
         "2026-11-16": [
-            {"timeid": "0900_60", "className": "Weightlifting", "bookState": 1},
+            {
+                "timeid": "0900_60",
+                "className": "Weightlifting",
+                "bookState": 1,
+            },
             {
                 "timeid": "1000_60",
                 "className": "Strength Conditioning",
@@ -327,7 +331,11 @@ def _weekly_classes():
             },
         ],
         "2026-11-17": [
-            {"timeid": "1815_60", "className": "Metcon", "bookState": 1}
+            {
+                "timeid": "1815_60",
+                "className": "Metcon",
+                "bookState": 1,
+            }
         ],
         "2026-11-18": [
             {"timeid": "1715_60", "className": "Weightlifting", "bookState": 1},
