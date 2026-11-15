@@ -77,7 +77,12 @@
       el.hidden=false;
     } else if(unverified.length) {
       el.classList.add("is-warning");
-      const items=unverified.map(item=>"<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+" — "+escapeHtml(reasonLabels[item.reason]||"motivo no identificado")+"</li>").join("");
+      const items=unverified.map(item=>{
+        const diagnostic=item.reason==="unknown_booking_state"
+          ? " (bookState: "+escapeHtml(String(item.observed_book_state))+" · tipo "+escapeHtml(item.observed_book_state_type||"desconocido")+")"
+          : "";
+        return "<li><strong>"+escapeHtml(personName(item.person_id))+"</strong> · "+escapeHtml(item.name)+" · "+escapeHtml(classDate(item.date,item.time))+" — "+escapeHtml(reasonLabels[item.reason]||"motivo no identificado")+diagnostic+"</li>";
+      }).join("");
       el.innerHTML="<strong>Hay "+unverified.length+" reserva"+(unverified.length===1?"":"s")+" que no se han podido verificar.</strong><ul>"+items+"</ul><small>"+result.checked+" verificadas. No se ha modificado ningún estado ni se ha asumido que estén canceladas.</small>";
       el.hidden=false;
     } else if(result.checked) {
