@@ -429,6 +429,7 @@ def test_external_discovery_imports_idempotently_without_scheduling(monkeypatch)
     )
 
     assert first["imported"] == 10
+    assert len(first["imported_bookings"]) == 10
     assert len(store.records) == 10
     assert all(item["status"] == "already_booked" for item in store.records.values())
     assert all(item["opens_at"].endswith("+01:00") for item in store.records.values())
