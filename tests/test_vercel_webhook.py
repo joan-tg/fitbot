@@ -84,9 +84,7 @@ class FakeHandler:
         return json.loads(self.wfile.getvalue())
 
 
-def test_preview_integration_probe_acquires_real_redis_lock_without_running_scheduler(
-    monkeypatch,
-):
+def test_preview_webhook_acknowledges_without_touching_shared_redis(monkeypatch):
     import api.book as book_api
 
     payload = json.dumps(
@@ -99,40 +97,24 @@ def test_preview_integration_probe_acquires_real_redis_lock_without_running_sche
         }
     ).encode()
     monkeypatch.setenv("VERCEL_ENV", "preview")
-    monkeypatch.setenv("DRY_RUN", "true")
+    monkeypatch.setenv("DRY_RUN", "false")
     monkeypatch.setattr(book_api, "_verify_qstash", lambda raw, signature: True)
-
-    class FakeRedis:
-        def acquire(self, booking, dry_run, ttl_seconds):
-            assert booking["name"] == "FITBOT_QSTASH_REDIS_INTEGRATION_TEST"
-            assert dry_run is True
-            assert ttl_seconds == 300
-            return True
-
-        def record_integration_result(self, probe_id, step, result):
-            assert (probe_id, step, result) == (
-                "integration-run-123",
-                "first",
-                "integration_test_lock_acquired",
-            )
-
-        @staticmethod
-        def integration_result_key(probe_id, step):
-            return f"fitbot:integration:{probe_id}:{step}"
-
-    monkeypatch.setattr(book_api, "UpstashRedis", FakeRedis)
+    monkeypatch.setattr(
+        book_api,
+        "UpstashRedis",
+        lambda: pytest.fail("Preview webhook must not access shared Redis"),
+    )
     monkeypatch.setattr(
         book_api,
         "run",
-        lambda *a, **k: pytest.fail("scheduler must not run"),
+        lambda *a, **k: pytest.fail("Preview webhook must not call AimHarder"),
     )
     request = FakeHandler(payload)
     response = request.post()
 
     assert request.status == 200
-    assert response["status"] == "integration_test_lock_acquired"
-    assert response["dry_run"] is True
-    assert response["environment"] == "preview"
+    assert response["status"] == "preview_read_only"
+    assert response["booking_executed"] is False
 
 
 @pytest.mark.parametrize(
