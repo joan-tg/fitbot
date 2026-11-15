@@ -365,7 +365,10 @@ def _discover_external_bookings(
                     continue
                 canonical_name, activity_type = configured
                 identity = _booking_identity(
-                    person_id, target_date, class_time.strftime("%H:%M"), canonical_name
+                    person_id,
+                    target_date,
+                    class_time.strftime("%H:%M"),
+                    canonical_name,
                 )
                 grouped[identity].append(
                     (class_start, canonical_name, activity_type)
