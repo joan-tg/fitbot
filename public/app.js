@@ -1,8 +1,8 @@
 (() => {
   "use strict";
-  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync" };
+  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -162,31 +162,45 @@
       const count=(type)=>personRecords.filter(record=>
         quotaActivityType(record)===type && quotaPolicy.countedStatuses.has(record.status)
       ).length;
-      const uncertain=personRecords.filter(record=>quotaPolicy.uncertainStatuses.has(record.status)).length;
+      const manual=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts?.[member.id]:null;
       return {
         ...member,
-        classesUsed:count("class"),
-        openBoxUsed:count("open_box"),
-        uncertain
+        classReservations:count("class"),
+        openBoxReservations:count("open_box"),
+        classesUsed:manual?.classes,
+        openBoxUsed:manual?.open_box
       };
     });
-    const renderQuota=(label,used,limit)=>{
-      const exceeded=used>limit;
-      const reached=used===limit;
+    const renderQuota=(label,used,limit,registered)=>{
+      if(!Number.isInteger(used)) {
+        return '<div class="quota-line"><span>'+label+'</span><strong>Consumo sin verificar</strong></div>'+
+          '<small class="muted">FitBot conoce '+registered+' reserva'+(registered===1?'':'s')+' del mes; no equivale a créditos utilizados.</small>';
+      }
+      const exceeded=used>limit, reached=used===limit;
       const status=exceeded
         ? "Has superado la cuota: "+used+"/"+limit
         : reached ? "Cuota alcanzada: "+used+"/"+limit : used+" de "+limit+" utilizadas";
-      return '<div class="quota-line'+(reached||exceeded?' quota-warning':'')+(exceeded?' quota-exceeded':'')+'"><span>'+label+'</span><strong>'+status+'</strong></div>';
+      return '<div class="quota-line'+(reached||exceeded?' quota-warning':'')+(exceeded?' quota-exceeded':'')+'"><span>'+label+'</span><strong>'+status+'</strong></div>'+
+        '<small class="muted">Dato introducido desde AimHarder · '+registered+' reservas registradas en FitBot</small>';
     };
-    $("quota-summary").innerHTML=summaries.map(member=>{
-      const alerts=[];
-      if(member.uncertain) alerts.push(member.uncertain+" resultado"+(member.uncertain===1?" incierto":"s inciertos")+" sin confirmar; no se incluye"+(member.uncertain===1?"":"n")+" en el cómputo.");
-      return '<article class="quota-person"><h3>'+member.name+'</h3>'+
-        renderQuota("Clases",member.classesUsed,member.classes)+
-        renderQuota("Open Box",member.openBoxUsed,member.openBox)+
-        (alerts.length?'<p class="quota-uncertain">'+alerts.join(" ")+' Conviene revisarlo antes de asumir que no consume cuota.</p>':'')+
-        '</article>';
-    }).join("");
+    $("quota-summary").innerHTML=summaries.map(member=>
+      '<article class="quota-person"><h3>'+member.name+'</h3>'+
+      renderQuota("Clases",member.classesUsed,member.classes,member.classReservations)+
+      renderQuota("Open Box",member.openBoxUsed,member.openBox,member.openBoxReservations)+
+      '</article>'
+    ).join("");
+    $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly;
+    const saved=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts:null;
+    const values=[
+      ["credits-person-1-classes", saved?.person_1?.classes],
+      ["credits-person-1-open-box", saved?.person_1?.open_box],
+      ["credits-person-2-classes", saved?.person_2?.classes],
+      ["credits-person-2-open-box", saved?.person_2?.open_box]
+    ];
+    values.forEach(([id,value])=>{
+      const field=$(id);
+      if(document.activeElement!==field) field.value=Number.isInteger(value)?String(value):"";
+    });
   }
   const completedStatuses = new Set(["dry_run","booking_confirmed","already_booked"]);
   const incidentStatuses = new Set(["booking_failed","schedule_failed","outcome_unconfirmed","incorrect_credentials","class_not_found","booking_missed"]);
@@ -344,15 +358,44 @@
     </div>`).join("");
   }
   async function refreshAll(initialBookings) {
-    const [bookingData,resultData]=await Promise.all([
+    const [bookingData,resultData,creditsData]=await Promise.all([
       initialBookings ? Promise.resolve(initialBookings) : request(API.bookings),
-      request(API.results).catch(()=>({results:[]}))
+      request(API.results).catch(()=>({results:[]})),
+      request(API.credits).catch(()=>null)
     ]);
     state.bookings=bookingData.bookings||[];
     state.results=resultData.results||[];
+    state.monthlyCredits=creditsData;
+    state.monthlyCreditsReadOnly=creditsData?.read_only===true;
     renderStats(); renderQuotaWarnings(); renderBookings(); renderActivity(); renderCalendar();
     $("last-updated").textContent="Actualizado "+new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
   }
+  $("monthly-credits-form").addEventListener("submit",async(event)=>{
+    event.preventDefault();
+    const button=$("save-monthly-credits");button.disabled=true;
+    const parse=(id)=>{
+      const raw=$(id).value.trim();
+      if(!raw) return null;
+      const value=Number(raw);
+      if(!Number.isInteger(value)||value<0||value>100) throw new Error("Introduce un número entero entre 0 y 100.");
+      return value;
+    };
+    try {
+      const counts={
+        person_1:{classes:parse("credits-person-1-classes"),open_box:parse("credits-person-1-open-box")},
+        person_2:{classes:parse("credits-person-2-classes"),open_box:parse("credits-person-2-open-box")}
+      };
+      const data=await request(API.credits,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({month:madridMonthKey(),counts})
+      });
+      state.monthlyCredits={...data,read_only:false};
+      renderQuotaWarnings();
+      toast("Créditos del mes guardados. Dato manual de AimHarder.");
+    } catch(error){ toast("No se han guardado los créditos: "+error.message); }
+    finally{button.disabled=false;}
+  });
   $("auth-form").addEventListener("submit",async(event)=>{
     event.preventDefault(); const button=event.submitter; button.disabled=true; $("auth-error").textContent="";
     try { await connect($("admin-token").value.trim()); toast("Conectado a FitBot"); }
