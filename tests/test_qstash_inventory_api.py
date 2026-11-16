@@ -63,6 +63,8 @@ def test_read_only_and_sanitized(monkeypatch):
 
     def fake_get(url, **kwargs):
         calls.append((url, kwargs))
+        if url.endswith("/logs") and kwargs["params"].get("cursor") == "next":
+            return Response({"logs": [{"messageId": "msg-2", "state": "DELIVERED"}]})
         if url.endswith("/logs"):
             return Response(
                 {
@@ -71,6 +73,7 @@ def test_read_only_and_sanitized(monkeypatch):
                         {
                             "messageId": "msg-1",
                             "state": "CREATED",
+                            "url": "https://fitbot-theta.vercel.app/api/book?token=secret",
                             "header": {"Authorization": "secret"},
                             "body": "sensitive",
                         }
@@ -82,6 +85,7 @@ def test_read_only_and_sanitized(monkeypatch):
                 {
                     "scheduleId": "sch-1",
                     "cron": "* * * * *",
+                    "destination": "https://fitbot-git-somebranch-joan-tgs-projects.vercel.app/api/reconcile?secret=yes",
                     "header": {"Authorization": "secret"},
                     "body": "sensitive",
                 }
@@ -93,7 +97,17 @@ def test_read_only_and_sanitized(monkeypatch):
     result = request.get()
     assert request.status == 200
     assert result["read_only"] is True
-    assert result["has_more_logs"] is True
+    assert result["has_more_logs"] is False
+    assert result["log_pages_scanned"] == 2
+    assert len(result["recent_logs"]) == 2
+    assert result["recurring_schedules"][0]["destination"] == {
+        "environment": "preview",
+        "endpoint": "/api/reconcile",
+    }
+    assert result["recent_logs"][0]["destination"] == {
+        "environment": "production",
+        "endpoint": "/api/book",
+    }
     assert result["recent_logs"][0]["message_id"] == "msg-1"
     assert result["recurring_schedules"][0]["schedule_id"] == "sch-1"
     assert "secret" not in json.dumps(result)
@@ -102,3 +116,10 @@ def test_read_only_and_sanitized(monkeypatch):
         kwargs["headers"]["Authorization"] == "Bearer private-secret"
         for _, kwargs in calls
     )
+
+
+def test_unknown_destinations_are_not_leaked():
+    assert inventory._destination_info("https://unknown.example.com/secret?token=x") == {
+        "environment": "unknown",
+        "endpoint": "other",
+    }
