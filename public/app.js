@@ -348,6 +348,17 @@
     } catch(error) { toast("No se ha podido exportar el inventario: "+error.message); }
     finally { button.disabled=false; }
   });
+  $("qstash-inventory").addEventListener("click",async()=>{
+    const button=$("qstash-inventory");button.disabled=true;
+    try {
+      const data=await request("/api/qstash_inventory");
+      const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);const link=document.createElement("a");
+      link.href=url;link.download="fitbot-qstash-inventory.json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+      toast("Consulta QStash descargada: "+data.recent_logs.length+" eventos recientes y "+data.recurring_schedules.length+" programaciones recurrentes.");
+    } catch(error) { toast("No se ha podido consultar QStash: "+error.message); }
+    finally { button.disabled=false; }
+  });
   $("logout-button").addEventListener("click",()=>{
     state.token="";sessionStorage.removeItem("fitbot_admin_token");$("admin-token").value="";showDashboard(false);
   });
