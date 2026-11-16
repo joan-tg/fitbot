@@ -119,7 +119,9 @@ def test_read_only_and_sanitized(monkeypatch):
 
 
 def test_unknown_destinations_are_not_leaked():
-    assert inventory._destination_info("https://unknown.example.com/secret?token=x") == {
+    assert inventory._destination_info(
+        "https://unknown.example.com/secret?token=x"
+    ) == {
         "environment": "unknown",
         "endpoint": "other",
     }
