@@ -337,6 +337,17 @@
     catch(error){$("auth-error").textContent=error.message; state.token="";sessionStorage.removeItem("fitbot_admin_token");}
     finally{button.disabled=false;}
   });
+  $("export-data").addEventListener("click",async()=>{
+    const button=$("export-data");button.disabled=true;
+    try {
+      const data=await request("/api/export");
+      const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);const link=document.createElement("a");
+      link.href=url;link.download="fitbot-inventory.json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+      toast("Inventario descargado: "+data.bookings_count+" reservas y "+data.results_count+" resultados.");
+    } catch(error) { toast("No se ha podido exportar el inventario: "+error.message); }
+    finally { button.disabled=false; }
+  });
   $("logout-button").addEventListener("click",()=>{
     state.token="";sessionStorage.removeItem("fitbot_admin_token");$("admin-token").value="";showDashboard(false);
   });
