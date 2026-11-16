@@ -45,9 +45,13 @@ def _snapshot(store):
     results_raw = store._command(["LRANGE", store.RESULTS_KEY, 0, -1]) or []
     if not isinstance(ids, list) or not isinstance(results_raw, list):
         raise RedisUnavailable("Unexpected inventory")
-    raw = store._command(
-        ["MGET", *(store.booking_record_key(booking_id) for booking_id in ids)]
-    ) if ids else []
+    raw = (
+        store._command(
+            ["MGET", *(store.booking_record_key(booking_id) for booking_id in ids)]
+        )
+        if ids
+        else []
+    )
     if not isinstance(raw, list) or len(raw) != len(ids) or any(v is None for v in raw):
         raise RedisUnavailable("Incomplete inventory")
     try:
@@ -63,7 +67,9 @@ def _snapshot(store):
         or len(raw) != 10
         or any(not isinstance(x, dict) for x in bookings + results)
     ):
-        raise ValueError("Live inventory differs from the agreed ten bookings and six results")
+        raise ValueError(
+            "Live inventory differs from the agreed ten bookings and six results"
+        )
     by_id = {b.get("id"): b for b in bookings}
     if len(by_id) != 10 or by_id[PRESERVED_ID].get("status") != "cancelled":
         raise ValueError("Preserved real cancellation is missing or changed")
@@ -82,19 +88,23 @@ def _snapshot(store):
         ):
             raise ValueError("A test booking changed; refusing cleanup")
     confirmed = [
-        r for r in results
+        r
+        for r in results
         if r.get("booking_id") == PRESERVED_ID
         and r.get("status") == "booking_confirmed"
         and r.get("dry_run") is False
     ]
     simulation = [
-        r for r in results
+        r
+        for r in results
         if r.get("booking_id") in EXPECTED_RESULT_IDS
         and r.get("status") == "dry_run"
         and r.get("dry_run") is True
     ]
     if len(confirmed) != 1 or len(simulation) != 5:
-        raise ValueError("Results no longer match the agreed preserved and simulated history")
+        raise ValueError(
+            "Results no longer match the agreed preserved and simulated history"
+        )
     fingerprint = hashlib.sha256(
         json.dumps([ids, raw, results_raw], separators=(",", ":")).encode("utf-8")
     ).hexdigest()
