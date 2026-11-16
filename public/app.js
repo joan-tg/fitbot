@@ -246,6 +246,28 @@
   function calendarDateKey(year, month, day) {
     return calendarMonthKey(year,month)+"-"+String(day).padStart(2,"0");
   }
+  function groupCalendarEvents(records) {
+    const groups=new Map();
+    records.forEach(item=>{
+      const key=JSON.stringify([item.date,item.time,item.name]);
+      if(!groups.has(key)) groups.set(key,{...item,participants:[],statuses:[]});
+      const group=groups.get(key);
+      if(!group.participants.includes(item.person_id)) group.participants.push(item.person_id);
+      group.statuses.push(item.status);
+    });
+    return Array.from(groups.values()).map(group=>({
+      ...group,
+      participants:group.participants.sort(),
+      status:group.statuses.every(status=>status===group.statuses[0])
+        ?group.statuses[0]:"mixed",
+    }));
+  }
+  function calendarPeople(item) {
+    return item.participants.map(personName).join(" y ");
+  }
+  function calendarEventStatus(item) {
+    return item.status==="mixed"?"Estados diferentes":statusName(item.status);
+  }
   function renderCalendar() {
     const year=state.calendarYear, month=state.calendarMonth;
     const first=new Date(year,month,1);
@@ -260,7 +282,7 @@
       (item.status==="booking_confirmed" || item.status==="already_booked" || item.status==="scheduled")
     );
     const byDate=new Map();
-    monthRecords.forEach(item=>{
+    groupCalendarEvents(monthRecords).forEach(item=>{
       if(!byDate.has(item.date)) byDate.set(item.date,[]);
       byDate.get(item.date).push(item);
     });
@@ -280,7 +302,7 @@
       if(!inMonth) classes.push("is-outside");
       if(dateKey===todayKey) classes.push("is-today");
       if(dateKey===state.selectedCalendarDate) classes.push("is-selected");
-      const preview=events.slice(0,2).map(item=>'<span class="calendar-event '+calendarCategory(item.status)+'">'+escapeHtml(item.time||"—")+' · '+escapeHtml(personName(item.person_id))+'</span>').join("");
+      const preview=events.slice(0,2).map(item=>'<span class="calendar-event '+(calendarCategory(item.status)||"")+'">'+escapeHtml(item.time||"—")+' · '+escapeHtml(calendarPeople(item))+'</span>').join("");
       const more=count>2?'<span class="calendar-more">+'+(count-2)+' más</span>':"";
       cells.push('<button class="'+classes.join(" ")+'" type="button" data-calendar-date="'+dateKey+'" '+(!inMonth?'disabled':'')+' aria-label="'+(inMonth?escapeHtml(day+" de "+monthLabel+", "+count+" clases"):"")+'" aria-pressed="'+(dateKey===state.selectedCalendarDate)+'"><span class="calendar-day-number">'+(inMonth?day:"")+'</span>'+preview+more+'</button>');
     }
@@ -293,7 +315,7 @@
       $("calendar-day-events").innerHTML='<div class="empty-state">No hay clases registradas para este día.</div>';
       return;
     }
-    $("calendar-day-events").innerHTML=selected.map(item=>'<article class="calendar-event-card"><div class="calendar-event-time">'+escapeHtml(item.time||"—")+'</div><div class="calendar-event-copy"><strong>'+escapeHtml(item.name||"Clase")+'</strong><small>'+escapeHtml(personName(item.person_id))+'</small>'+(item.status==="booking_missed"?'<small class="status-detail">Llegó fuera de la ventana de 30 min.</small>':"")+'</div><span class="status-pill '+statusClass(item.status)+'">'+escapeHtml(statusName(item.status))+'</span></article>').join("");
+    $("calendar-day-events").innerHTML=selected.map(item=>'<article class="calendar-event-card"><div class="calendar-event-time">'+escapeHtml(item.time||"—")+'</div><div class="calendar-event-copy"><strong>'+escapeHtml(item.name||"Clase")+'</strong><small>'+escapeHtml(calendarPeople(item))+'</small>'+(item.status==="booking_missed"?'<small class="status-detail">Llegó fuera de la ventana de 30 min.</small>':"")+'</div><span class="status-pill '+statusClass(item.status)+'">'+escapeHtml(calendarEventStatus(item))+'</span></article>').join("");
   }
   function setCalendarMonth(year,month) {
     const date=new Date(year,month,1);
