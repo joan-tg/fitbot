@@ -348,6 +348,30 @@
     } catch(error) { toast("No se ha podido exportar el inventario: "+error.message); }
     finally { button.disabled=false; }
   });
+  $("cleanup-tests").addEventListener("click",async()=>{
+    const button=$("cleanup-tests");button.disabled=true;
+    try {
+      const preview=await request("/api/cleanup_tests");
+      if(!preview.ready) throw new Error("La limpieza no está autorizada.");
+      const latest=await request("/api/export");
+      if(latest.bookings_count!==10||latest.results_count!==6) throw new Error("El inventario ha cambiado.");
+      const blob=new Blob([JSON.stringify(latest,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob),link=document.createElement("a");
+      link.href=url;link.download="fitbot-backup-before-cleanup.json";
+      document.body.appendChild(link);link.click();link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      const approved=confirm("Se ha preparado la descarga de una copia de seguridad. Comprueba que fitbot-backup-before-cleanup.json se haya guardado. La operación eliminará 9 registros antiguos de prueba y 5 resultados de simulación. Se conservará la reserva real cancelada y su resultado. ¿Confirmas que has guardado la copia y autorizas el borrado?");
+      if(!approved) return;
+      const result=await request("/api/cleanup_tests",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({confirm_cleanup:true,backup_saved:true,snapshot:preview.snapshot})
+      });
+      toast("Limpieza completada: "+result.removed_bookings+" reservas de prueba y "+result.removed_simulation_results+" resultados.");
+      await refreshAll();
+    } catch(error) { toast("Limpieza no ejecutada: "+error.message); }
+    finally { button.disabled=false; }
+  });
   $("qstash-inventory").addEventListener("click",async()=>{
     const button=$("qstash-inventory");button.disabled=true;
     try {
