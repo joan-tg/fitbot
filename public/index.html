@@ -65,6 +65,16 @@
         </div>
         <p class="quota-intro">Seguimiento de las cuotas mensuales. Los avisos son informativos y nunca bloquean una programación.</p>
         <div id="quota-summary" class="quota-grid" aria-live="polite"><div class="empty-state">Calculando cuotas…</div></div>
+        <form id="monthly-credits-form" class="monthly-credits-form" hidden>
+          <p class="muted small-text">Introduce los créditos gastados que muestra AimHarder para este mes (no las clases que has reservado). Deja vacío cualquier dato que no hayas verificado.</p>
+          <div class="monthly-credit-fields">
+            <label>Joan · Clases <input id="credits-person-1-classes" type="number" min="0" max="100" step="1" inputmode="numeric" placeholder="—"></label>
+            <label>Joan · Open Box <input id="credits-person-1-open-box" type="number" min="0" max="100" step="1" inputmode="numeric" placeholder="—"></label>
+            <label>Paula · Clases <input id="credits-person-2-classes" type="number" min="0" max="100" step="1" inputmode="numeric" placeholder="—"></label>
+            <label>Paula · Open Box <input id="credits-person-2-open-box" type="number" min="0" max="100" step="1" inputmode="numeric" placeholder="—"></label>
+          </div>
+          <button class="outline-button" type="submit" id="save-monthly-credits">Guardar créditos de AimHarder</button>
+        </form>
       </section>
 
       <section class="content-grid">
