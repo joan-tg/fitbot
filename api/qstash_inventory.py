@@ -29,7 +29,9 @@ def _destination_info(destination):
         environment = "preview"
     else:
         environment = "unknown"
-    endpoint = parsed.path if parsed.path in ("/api/reconcile", "/api/book") else "other"
+    endpoint = (
+        parsed.path if parsed.path in ("/api/reconcile", "/api/book") else "other"
+    )
     return {"environment": environment, "endpoint": endpoint}
 
 
@@ -53,7 +55,9 @@ def collect_inventory():
         )
         logs_response.raise_for_status()
         logs_payload = logs_response.json()
-        if not isinstance(logs_payload, dict) or not isinstance(logs_payload.get("logs"), list):
+        if not isinstance(logs_payload, dict) or not isinstance(
+            logs_payload.get("logs"), list
+        ):
             raise ValueError("Unexpected QStash logs")
         logs.extend(logs_payload["logs"])
         pages_scanned += 1
