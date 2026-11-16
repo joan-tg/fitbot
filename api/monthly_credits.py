@@ -119,10 +119,21 @@ class handler(BaseHTTPRequestHandler):
                 "updated_at": datetime.now(ZoneInfo("Europe/Madrid")).isoformat(),
             }
             UpstashRedis()._command(
-                ["SET", _key(month), json.dumps(record, separators=(",", ":")), "EX", 110 * 86400]
+                [
+                    "SET",
+                    _key(month),
+                    json.dumps(record, separators=(",", ":")),
+                    "EX",
+                    110 * 86400,
+                ]
             )
             return self._respond(
-                200, {"month": month, "counts": record["counts"], "updated_at": record["updated_at"]}
+                200,
+                {
+                    "month": month,
+                    "counts": record["counts"],
+                    "updated_at": record["updated_at"],
+                },
             )
         except (ValueError, TypeError, json.JSONDecodeError) as error:
             return self._respond(400, {"error": str(error)})
