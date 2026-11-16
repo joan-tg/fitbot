@@ -81,4 +81,7 @@ def test_read_only_and_sanitized(monkeypatch):
     assert result["recurring_schedules"][0]["schedule_id"] == "sch-1"
     assert "secret" not in json.dumps(result)
     assert all(url.startswith("https://qstash.upstash.io/v2/") for url, _ in calls)
-    assert all(\n        kwargs["headers"]["Authorization"] == "Bearer private-secret"\n        for _, kwargs in calls\n    )
+    assert all(
+        kwargs["headers"]["Authorization"] == "Bearer private-secret"
+        for _, kwargs in calls
+    )
