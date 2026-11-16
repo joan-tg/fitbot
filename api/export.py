@@ -5,14 +5,14 @@ import json
 import logging
 import os
 import sys
-from pathlib import Path
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from redis_store import RedisUnavailable, UpstashRedis
+from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
 
 logger = logging.getLogger("fitbot.export")
 
@@ -40,7 +40,7 @@ class handler(BaseHTTPRequestHandler):
                 "results": results,
                 "notes": [
                     "This export is read-only and does not modify Redis or QStash.",
-                    "QStash schedules are not included in this export."
+                    "QStash schedules are not included in this export.",
                 ],
             }
             body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
