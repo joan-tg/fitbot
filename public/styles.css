@@ -82,3 +82,11 @@
 @media(max-width:560px){.quota-panel{padding:17px}.quota-grid{grid-template-columns:1fr}.quota-line{font-size:10px}.quota-line strong{font-size:9px}}
 
 .sync-notice{margin:0 0 18px;padding:14px 16px;border:1px solid #6c5835;border-radius:12px;background:#2b271e;color:#f2d9a6;font-size:12px}.sync-notice strong{display:block}.sync-notice ul{margin:8px 0;padding-left:20px}.sync-notice li{margin:4px 0}.sync-notice small{display:block;color:#c9b88f;margin-top:8px}.import-external-button{margin-top:12px;border-color:#8ce2c066;color:var(--mint)}.sync-notice.is-warning{display:block}
+
+.monthly-credits-form{margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:12px;background:rgba(10,20,34,.35)}
+.monthly-credits-form p{margin:0 0 12px}
+.monthly-credit-fields{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.monthly-credit-fields label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:var(--muted)}
+.monthly-credit-fields input{width:100%;min-width:0;border:1px solid var(--line);border-radius:8px;background:#0d1726;color:var(--text);padding:9px;font:inherit}
+.quota-person small.muted{display:block;font-size:10px;margin:3px 0 10px}
+@media(max-width:680px){.monthly-credit-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
