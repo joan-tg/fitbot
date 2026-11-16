@@ -46,29 +46,48 @@ def collect_inventory():
     cursor = None
     seen_cursors = set()
     pages_scanned = 0
+    logs_status = "complete"
+    # Logs must never prevent independent recurring-schedule inspection.
     while pages_scanned < MAX_LOG_PAGES:
         params = {"count": MAX_LOGS}
-        if cursor:
+        if cursor is not None:
             params["cursor"] = cursor
-        logs_response = requests.get(
-            f"{BASE_URL}/logs", headers=headers, params=params, timeout=TIMEOUT
-        )
-        logs_response.raise_for_status()
-        logs_payload = logs_response.json()
+        try:
+            logs_response = requests.get(
+                f"{BASE_URL}/logs", headers=headers, params=params, timeout=TIMEOUT
+            )
+            logs_response.raise_for_status()
+            logs_payload = logs_response.json()
+        except (requests.RequestException, ValueError):
+            logger.warning("QStash logs unavailable; showing schedules only")
+            logs_status = "unavailable" if pages_scanned == 0 else "partial"
+            break
+        pages_scanned += 1
         if not isinstance(logs_payload, dict) or not isinstance(
             logs_payload.get("logs"), list
         ):
-            raise ValueError("Unexpected QStash logs")
-        logs.extend(logs_payload["logs"])
-        pages_scanned += 1
+            logger.warning("QStash logs returned unexpected response shape")
+            logs_status = "unavailable" if not logs else "partial"
+            break
+        page = logs_payload["logs"]
+        logs.extend(page)
         next_cursor = logs_payload.get("cursor")
         if not next_cursor:
             cursor = None
             break
-        if not isinstance(next_cursor, str) or next_cursor in seen_cursors:
-            raise ValueError("QStash returned a repeated or invalid cursor")
+        if not isinstance(next_cursor, (str, int)):
+            logs_status = "partial"
+            break
+        next_cursor = str(next_cursor)
+        if not page or next_cursor in seen_cursors:
+            # Guard against empty/stuck pages without pretending logs are complete.
+            logs_status = "partial"
+            break
         seen_cursors.add(next_cursor)
         cursor = next_cursor
+    else:
+        if cursor:
+            logs_status = "partial"
     schedules_response = requests.get(
         f"{BASE_URL}/schedules", headers=headers, timeout=TIMEOUT
     )
@@ -105,10 +124,11 @@ def collect_inventory():
         "read_only": True,
         "recent_logs": safe_logs,
         "recurring_schedules": safe_schedules,
-        "has_more_logs": bool(cursor),
+        "has_more_logs": bool(cursor) or logs_status != "complete",
+        "logs_status": logs_status,
         "log_pages_scanned": pages_scanned,
         "log_entries_scanned": len(logs),
-        "log_scan_limit_reached": bool(cursor),
+        "log_scan_limit_reached": pages_scanned >= MAX_LOG_PAGES and bool(cursor),
         "limitations": [
             "Logs are bounded and are not a complete inventory of pending one-off messages.",
             "Recurring schedules are separate from delayed one-off messages.",

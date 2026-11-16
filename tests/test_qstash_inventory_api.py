@@ -125,3 +125,71 @@ def test_unknown_destinations_are_not_leaked():
         "environment": "unknown",
         "endpoint": "other",
     }
+
+
+def test_malformed_log_page_still_reports_schedules(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "test-admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setenv("QSTASH_TOKEN", "private-secret")
+
+    class Response:
+        def __init__(self, data):
+            self.data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.data
+
+    def fake_get(url, **kwargs):
+        if url.endswith("/logs"):
+            return Response({"cursor": 123456789, "logs": None})
+        return Response(
+            [
+                {
+                    "scheduleId": "fitbot-preview-reconcile",
+                    "cron": "*/5 * * * *",
+                    "destination": "https://fitbot-git-master-joan-tgs-projects.vercel.app/api/reconcile",
+                    "isPaused": False,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(inventory.requests, "get", fake_get)
+    response = FakeHandler()
+    data = response.get()
+    assert response.status == 200
+    assert data["logs_status"] == "unavailable"
+    assert data["has_more_logs"] is True
+    assert len(data["recurring_schedules"]) == 1
+    assert data["recurring_schedules"][0]["destination"]["environment"] == "preview"
+
+
+def test_numeric_log_cursor_is_supported(monkeypatch):
+    monkeypatch.setenv("QSTASH_TOKEN", "private-secret")
+    calls = []
+
+    class Response:
+        def __init__(self, data):
+            self.data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.data
+
+    def fake_get(url, **kwargs):
+        if url.endswith("/schedules"):
+            return Response([])
+        calls.append(kwargs["params"])
+        if len(calls) == 1:
+            return Response({"cursor": 123456789, "logs": [{"messageId": "m1"}]})
+        return Response({"logs": [{"messageId": "m2"}]})
+
+    monkeypatch.setattr(inventory.requests, "get", fake_get)
+    data = inventory.collect_inventory()
+    assert data["logs_status"] == "complete"
+    assert len(data["recent_logs"]) == 2
+    assert calls[1]["cursor"] == "123456789"
