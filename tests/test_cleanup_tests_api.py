@@ -94,7 +94,9 @@ class FakeRedis:
         if command[0] == "LRANGE":
             return [json.dumps(entry) for entry in self.history]
         if command[0] == "MGET":
-            return [json.dumps(self.bookings[key.split(":")[-1]]) for key in command[1:]]
+            return [
+                json.dumps(self.bookings[key.split(":")[-1]]) for key in command[1:]
+            ]
         if command[0] == "EVAL":
             return [9, 5]
         raise AssertionError("Unexpected Redis operation")
