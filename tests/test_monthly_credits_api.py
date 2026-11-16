@@ -67,7 +67,10 @@ class FakeStore:
 def test_rejects_untrusted_counts():
     for bad in (
         {"person_1": {"classes": True, "open_box": 0}},
-        {"person_1": {"classes": 2, "open_box": 0}, "person_2": {"classes": -1, "open_box": 0}},
+        {
+            "person_1": {"classes": 2, "open_box": 0},
+            "person_2": {"classes": -1, "open_box": 0},
+        },
     ):
         with pytest.raises(ValueError):
             credits._validate_counts(bad)
