@@ -359,6 +359,17 @@
     } catch(error) { toast("No se ha podido consultar QStash: "+error.message); }
     finally { button.disabled=false; }
   });
+  $("qstash-messages").addEventListener("click",async()=>{
+    const button=$("qstash-messages");button.disabled=true;
+    try {
+      const data=await request("/api/qstash_messages");
+      const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
+      const url=URL.createObjectURL(blob);const link=document.createElement("a");
+      link.href=url;link.download="fitbot-qstash-messages.json";document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+      toast("Comprobados "+data.checked_count+" mensajes de QStash en modo lectura.");
+    } catch(error) { toast("No se han podido verificar los mensajes: "+error.message); }
+    finally { button.disabled=false; }
+  });
   $("logout-button").addEventListener("click",()=>{
     state.token="";sessionStorage.removeItem("fitbot_admin_token");$("admin-token").value="";showDashboard(false);
   });
