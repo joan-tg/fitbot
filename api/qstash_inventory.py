@@ -6,6 +6,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
+from urllib.parse import urlsplit
 
 import requests
 
@@ -13,6 +14,25 @@ logger = logging.getLogger("fitbot.qstash_inventory")
 BASE_URL = "https://qstash.upstash.io/v2"
 TIMEOUT = 8
 MAX_LOGS = 100
+MAX_LOG_PAGES = 5
+
+
+def _destination_info(destination):
+    """Expose only a recognized FitBot environment/endpoint, never a raw URL."""
+    if not isinstance(destination, str):
+        return {"environment": "unknown", "endpoint": "unknown"}
+    parsed = urlsplit(destination)
+    host = (parsed.hostname or "").lower()
+    if host == "fitbot-theta.vercel.app":
+        environment = "production"
+    elif host.startswith("fitbot-git-") and host.endswith(".vercel.app"):
+        environment = "preview"
+    else:
+        environment = "unknown"
+    endpoint = (
+        parsed.path if parsed.path in ("/api/reconcile", "/api/book") else "other"
+    )
+    return {"environment": environment, "endpoint": endpoint}
 
 
 def collect_inventory():
@@ -22,21 +42,40 @@ def collect_inventory():
     headers = {"Authorization": f"Bearer {token}"}
     # QStash one-off delayed publishes are messages, NOT recurring schedules.
     # Logs provide recent message activity; this is not a complete pending queue listing.
-    logs_response = requests.get(
-        f"{BASE_URL}/logs", headers=headers, params={"count": MAX_LOGS}, timeout=TIMEOUT
-    )
-    logs_response.raise_for_status()
-    logs_payload = logs_response.json()
+    logs = []
+    cursor = None
+    seen_cursors = set()
+    pages_scanned = 0
+    while pages_scanned < MAX_LOG_PAGES:
+        params = {"count": MAX_LOGS}
+        if cursor:
+            params["cursor"] = cursor
+        logs_response = requests.get(
+            f"{BASE_URL}/logs", headers=headers, params=params, timeout=TIMEOUT
+        )
+        logs_response.raise_for_status()
+        logs_payload = logs_response.json()
+        if not isinstance(logs_payload, dict) or not isinstance(
+            logs_payload.get("logs"), list
+        ):
+            raise ValueError("Unexpected QStash logs")
+        logs.extend(logs_payload["logs"])
+        pages_scanned += 1
+        next_cursor = logs_payload.get("cursor")
+        if not next_cursor:
+            cursor = None
+            break
+        if not isinstance(next_cursor, str) or next_cursor in seen_cursors:
+            raise ValueError("QStash returned a repeated or invalid cursor")
+        seen_cursors.add(next_cursor)
+        cursor = next_cursor
     schedules_response = requests.get(
         f"{BASE_URL}/schedules", headers=headers, timeout=TIMEOUT
     )
     schedules_response.raise_for_status()
     schedules_payload = schedules_response.json()
-    if not isinstance(logs_payload, dict) or not isinstance(schedules_payload, list):
-        raise ValueError("Unexpected QStash response")
-    logs = logs_payload.get("logs", [])
-    if not isinstance(logs, list):
-        raise ValueError("Unexpected QStash logs")
+    if not isinstance(schedules_payload, list):
+        raise ValueError("Unexpected QStash schedules")
     # Never return forwarded headers, bodies, credentials or arbitrary destination URLs.
     safe_logs = [
         {
@@ -44,8 +83,10 @@ def collect_inventory():
             "state": item.get("state"),
             "time": item.get("time"),
             "next_delivery_time": item.get("nextDeliveryTime"),
+            "schedule_id": item.get("scheduleId"),
+            "destination": _destination_info(item.get("url")),
         }
-        for item in logs[:MAX_LOGS]
+        for item in logs
         if isinstance(item, dict)
     ]
     safe_schedules = [
@@ -54,6 +95,7 @@ def collect_inventory():
             "cron": item.get("cron"),
             "is_paused": item.get("isPaused"),
             "next_schedule_time": item.get("nextScheduleTime"),
+            "destination": _destination_info(item.get("destination")),
         }
         for item in schedules_payload
         if isinstance(item, dict)
@@ -63,9 +105,12 @@ def collect_inventory():
         "read_only": True,
         "recent_logs": safe_logs,
         "recurring_schedules": safe_schedules,
-        "has_more_logs": bool(logs_payload.get("cursor")),
+        "has_more_logs": bool(cursor),
+        "log_pages_scanned": pages_scanned,
+        "log_entries_scanned": len(logs),
+        "log_scan_limit_reached": bool(cursor),
         "limitations": [
-            "Recent logs are not a complete inventory of pending one-off messages.",
+            "Logs are bounded and are not a complete inventory of pending one-off messages.",
             "Recurring schedules are separate from delayed one-off messages.",
             "No messages were created, changed or cancelled.",
         ],
