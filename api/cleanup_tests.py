@@ -191,15 +191,18 @@ class handler(BaseHTTPRequestHandler):
         try:
             store = UpstashRedis()
             _, _, _, fingerprint = _snapshot(store)
-            return self._respond(200, {
-                "ready": True,
-                "snapshot": fingerprint,
-                "expected_removed_bookings": 9,
-                "expected_removed_results": 5,
-                "preserved_real_booking_id": PRESERVED_ID,
-                "backup_required": True,
-                "note": "No data has been changed. Export a fresh inventory before confirming.",
-            })
+            return self._respond(
+                200,
+                {
+                    "ready": True,
+                    "snapshot": fingerprint,
+                    "expected_removed_bookings": 9,
+                    "expected_removed_results": 5,
+                    "preserved_real_booking_id": PRESERVED_ID,
+                    "backup_required": True,
+                    "note": "No data has been changed. Export a fresh inventory before confirming.",
+                },
+            )
         except (RedisUnavailable, ValueError):
             logger.exception("Cleanup preflight failed")
             return self._respond(409, {"error": "Inventory changed; cleanup blocked"})
