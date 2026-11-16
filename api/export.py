@@ -21,7 +21,11 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         expected = os.environ.get("FITBOT_ADMIN_TOKEN", "")
         supplied = self.headers.get("Authorization", "")
-        if not expected or not supplied.startswith("Bearer ") or not hmac.compare_digest(supplied[7:], expected):
+        if (
+            not expected
+            or not supplied.startswith("Bearer ")
+            or not hmac.compare_digest(supplied[7:], expected)
+        ):
             return self._respond(401, {"error": "Unauthorized"})
 
         if os.environ.get("VERCEL_ENV") not in ("preview", "production"):
