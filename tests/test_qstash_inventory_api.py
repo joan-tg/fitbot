@@ -64,12 +64,29 @@ def test_read_only_and_sanitized(monkeypatch):
     def fake_get(url, **kwargs):
         calls.append((url, kwargs))
         if url.endswith("/logs"):
-            return Response({"cursor": "next", "logs": [{
-                "messageId": "msg-1", "state": "CREATED",
-                "header": {"Authorization": "secret"}, "body": "sensitive",
-            }]})
-        return Response([{"scheduleId": "sch-1", "cron": "* * * * *",
-                          "header": {"Authorization": "secret"}, "body": "sensitive"}])
+            return Response(
+                {
+                    "cursor": "next",
+                    "logs": [
+                        {
+                            "messageId": "msg-1",
+                            "state": "CREATED",
+                            "header": {"Authorization": "secret"},
+                            "body": "sensitive",
+                        }
+                    ],
+                }
+            )
+        return Response(
+            [
+                {
+                    "scheduleId": "sch-1",
+                    "cron": "* * * * *",
+                    "header": {"Authorization": "secret"},
+                    "body": "sensitive",
+                }
+            ]
+        )
 
     monkeypatch.setattr(inventory.requests, "get", fake_get)
     request = FakeHandler()
