@@ -1,4 +1,4 @@
-""""Authenticated, read-only export of FitBot's stored booking data."""
+"""Authenticated, read-only export of FitBot's stored booking data."""
 
 import hmac
 import json
