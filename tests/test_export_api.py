@@ -24,6 +24,15 @@ class FakeHandler:
     def end_headers(self):
         pass
 
+    def _respond(self, status, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def get(self):
         export_api.handler.do_GET(self)
         return json.loads(self.wfile.getvalue())
