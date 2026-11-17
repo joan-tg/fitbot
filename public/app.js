@@ -2,7 +2,7 @@
   "use strict";
   const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits", liveCredits: "/api/monthly_credits?source=live" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false, liveCredits: null };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false, liveCredits: null, bookingMode: "unknown", environment: "", detailed: false, submissionKeys: null, submissionFingerprint: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -35,6 +35,25 @@
     $("auth-panel").hidden=visible; $("dashboard").hidden=!visible;
     $("logout-button").hidden=!visible; $("refresh-button").hidden=!visible;
   }
+  function renderMode() {
+    const preview=state.environment==="preview";
+    const text=preview?"PREVIEW · SOLO LECTURA":state.environment==="production"?"PRODUCTION":"ENTORNO NO VERIFICADO";
+    $("environment-indicator").lastChild.textContent=" "+text;
+    const mode=preview?"Solo lectura":state.bookingMode==="live"?"Reservas reales activadas":state.bookingMode==="simulation"?"Modo simulación":"Estado no verificado";
+    $("booking-mode-title").textContent=mode;
+    $("booking-mode-detail").textContent=preview?"No se pueden programar reservas desde Preview":state.bookingMode==="live"?"Las programaciones ejecutan reservas reales":"No se puede confirmar la activación de reservas reales";
+    $("schedule-button").disabled=preview||state.bookingMode==="unknown";
+  }
+  function setView(detailed) {
+    state.detailed=Boolean(detailed);
+    $("dashboard").dataset.view=state.detailed?"detailed":"simple";
+    $("toggle-detail").textContent=state.detailed?"Volver a vista sencilla":"Visión detallada de la app";
+    $("toggle-detail").setAttribute("aria-pressed",String(state.detailed));
+    try { localStorage.setItem("fitbot_detailed_view",state.detailed?"1":"0"); } catch (_) {}
+    setAgendaView(state.detailed?"history":"calendar");
+    renderCalendar();
+  }
+  $("toggle-detail").addEventListener("click",()=>setView(!state.detailed));
   async function request(path, options={}) {
     const response = await fetch(path, {
       ...options,
@@ -118,7 +137,10 @@
   }
   async function connect(token) {
     state.token=token;
-    await request("/api/bookings?limit=1");
+    const sessionInfo=await request("/api/bookings?limit=1");
+    state.environment=sessionInfo.environment||"";
+    state.bookingMode=sessionInfo.booking_mode||"unknown";
+    renderMode();
     sessionStorage.setItem("fitbot_admin_token",token);
     showDashboard(true);
     let syncResult;
@@ -301,7 +323,8 @@
     $("calendar-month-title").textContent=monthLabel.charAt(0).toLocaleUpperCase("es-ES")+monthLabel.slice(1);
     const monthRecords=historyRecords().filter(item=>
       item.date && item.date.slice(0,7)===monthKey &&
-      (item.status==="booking_confirmed" || item.status==="already_booked" || item.status==="scheduled")
+      (item.status==="booking_confirmed" || item.status==="already_booked" || item.status==="scheduled" || item.status==="pending_schedule" || item.status==="scheduling" || item.status==="processing") &&
+      (state.detailed || (item.date+"T"+(item.time||"00:00"))>=new Intl.DateTimeFormat("sv-SE",{timeZone:"Europe/Madrid",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).format(new Date()).replace(" ","T"))
     );
     const byDate=new Map();
     groupCalendarEvents(monthRecords).forEach(item=>{
@@ -373,6 +396,9 @@
       request(API.liveCredits).catch(()=>null)
     ]);
     state.bookings=bookingData.bookings||[];
+    state.environment=bookingData.environment||state.environment;
+    state.bookingMode=bookingData.booking_mode||state.bookingMode;
+    renderMode();
     state.results=resultData.results||[];
     state.monthlyCredits=creditsData;
     state.liveCredits=liveCreditsData;
@@ -470,7 +496,7 @@
     finally { button.disabled=false; }
   });
   $("logout-button").addEventListener("click",()=>{
-    state.token="";sessionStorage.removeItem("fitbot_admin_token");$("admin-token").value="";showDashboard(false);
+    state.token="";sessionStorage.removeItem("fitbot_admin_token");$("admin-token").value="";state.bookingMode="unknown";showDashboard(false);
   });
   async function refresh() {
     $("refresh-button").disabled=true;
@@ -511,7 +537,7 @@
     }
   });
   function setAgendaView(view) {
-    const showCalendar=view==="calendar";
+    const showCalendar=!state.detailed||view==="calendar";
     $("calendar-panel").hidden=!showCalendar;
     $("history-panel").hidden=showCalendar;
     $("show-calendar").classList.toggle("is-active",showCalendar);
@@ -641,6 +667,9 @@
     timeSelect.append(option);
   }
   const now=new Date(); $("class-date").min=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  let savedDetailed=false;
+  try { savedDetailed=localStorage.getItem("fitbot_detailed_view")==="1"; } catch (_) {}
+  setView(savedDetailed);
   if (state.token) {
     connect(state.token).catch((error)=>{showDashboard(false);$("auth-error").textContent=error.message;});
   } else showDashboard(false);
