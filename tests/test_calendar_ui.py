@@ -64,7 +64,7 @@ def test_simple_mode_keeps_credits_booking_and_calendar():
 def test_dual_booking_uses_one_request_per_member_with_distinct_keys():
     html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
     script = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
-    assert '<option value="both" selected>Joan y Paula</option>' in html
+    assert '<option value="both">Joan y Paula</option>' in html
     assert '["person_1","person_2"]' in script
     assert "state.submissionKeys[person_id]" in script
     assert "failures.push({person_id,message:err.message})" in script
