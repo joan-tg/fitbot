@@ -88,6 +88,7 @@ class handler(BaseHTTPRequestHandler):
                 return self._respond(
                     200,
                     {
+                        "month": _current_month(),
                         "source": "aimharder_clasesDisp",
                         "interpretation": "committed_over_total",
                         "consumed_formula": "committed_minus_future_reserved_72h_window",
