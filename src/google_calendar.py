@@ -32,9 +32,8 @@ def _event_payload(booking, duration_minutes=60):
         if booking["name"] == "Strength Conditioning"
         else booking["name"]
     )
-    event_id = "fitbot" + hashlib.sha256(
-        ("joan:" + booking["id"]).encode("utf-8")
-    ).hexdigest()[:32]
+    digest = hashlib.sha256(("joan:" + booking["id"]).encode("utf-8")).hexdigest()
+    event_id = "fitbot" + digest[:32]
     return {
         "id": event_id,
         "summary": title,
@@ -46,9 +45,7 @@ def _event_payload(booking, duration_minutes=60):
             "useDefault": False,
             "overrides": [{"method": "popup", "minutes": 30}],
         },
-        "extendedProperties": {
-            "private": {"fitbot_booking_id": booking["id"]}
-        },
+        "extendedProperties": {"private": {"fitbot_booking_id": booking["id"]}},
     }
 
 
