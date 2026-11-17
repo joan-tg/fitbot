@@ -82,7 +82,7 @@ class handler(BaseHTTPRequestHandler):
             return self._respond(401, {"error": "Unauthorized"})
         if os.environ.get("VERCEL_ENV") not in ("production", "preview"):
             return self._respond(403, {"error": "Vercel only"})
-        if self.path.partition("?")[2] == "source=live":
+        if getattr(self, "path", "").partition("?")[2] == "source=live":
             try:
                 members = fetch_member_credits(load_config())
                 return self._respond(
