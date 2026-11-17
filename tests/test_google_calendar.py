@@ -3,7 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 import sys
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -83,7 +83,30 @@ def test_missing_configuration_fails_closed(monkeypatch):
 
 def test_insert_is_idempotent_and_handles_existing_event(monkeypatch):
     import json
-    from google.oauth2 import service_account
+    # The Docker test image does not include the optional Google SDK.
+    # Supply fake modules to exercise the integration without credentials.
+    google = ModuleType("google")
+    auth = ModuleType("google.auth")
+    transport = ModuleType("google.auth.transport")
+    transport_requests = ModuleType("google.auth.transport.requests")
+    oauth2 = ModuleType("google.oauth2")
+    service_account = ModuleType("google.oauth2.service_account")
+    transport_requests.Request = lambda: object()
+    oauth2.service_account = service_account
+    google.auth = auth
+    google.oauth2 = oauth2
+    auth.transport = transport
+    transport.requests = transport_requests
+    modules = {
+        "google": google,
+        "google.auth": auth,
+        "google.auth.transport": transport,
+        "google.auth.transport.requests": transport_requests,
+        "google.oauth2": oauth2,
+        "google.oauth2.service_account": service_account,
+    }
+    for key, value in modules.items():
+        monkeypatch.setitem(sys.modules, key, value)
 
     class FakeCredentials:
         token = "token"
@@ -92,11 +115,11 @@ def test_insert_is_idempotent_and_handles_existing_event(monkeypatch):
             pass
 
     monkeypatch.setenv("GOOGLE_CALENDAR_ID", "calendar@example.com")
-    monkeypatch.setenv("GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON", json.dumps({"type": "service_account"}))
-    monkeypatch.setattr(
-        service_account.Credentials,
-        "from_service_account_info",
-        lambda *args, **kwargs: FakeCredentials(),
+    monkeypatch.setenv(
+        "GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON", json.dumps({"type": "service_account"})
+    )
+    service_account.Credentials = SimpleNamespace(
+        from_service_account_info=lambda *args, **kwargs: FakeCredentials()
     )
     calls = []
 
