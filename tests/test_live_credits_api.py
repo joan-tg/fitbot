@@ -26,7 +26,9 @@ def test_missing_category_remains_unknown():
     assert parsed["open_box"] is None
 
 
-@pytest.mark.parametrize("raw", ["", "CrossFit (18/17)", "CrossFit (3/4)<br>Fuerza (2/4)"])
+@pytest.mark.parametrize(
+    "raw", ["", "CrossFit (18/17)", "CrossFit (3/4)<br>Fuerza (2/4)"]
+)
 def test_rejects_missing_invalid_or_ambiguous_balances(raw):
     with pytest.raises(ValueError):
         credits.parse_committed_credits(raw)
@@ -39,13 +41,23 @@ def test_queries_separate_member_accounts_without_writes(monkeypatch):
     monkeypatch.setenv("PERSON_TWO_PASSWORD", "twopass")
 
     config = {
-        "box_id": 9507, "box_name": "studiocrossfit", "family_id": None,
+        "box_id": 9507,
+        "box_name": "studiocrossfit",
+        "family_id": None,
         "activities": {"class": ["CrossFit"], "open_box": ["Open Box"]},
         "members": {
-            "person_1": {"aimharder_credentials": {
-                "email_env": "PERSON_ONE_EMAIL", "password_env": "PERSON_ONE_PASSWORD"}},
-            "person_2": {"aimharder_credentials": {
-                "email_env": "PERSON_TWO_EMAIL", "password_env": "PERSON_TWO_PASSWORD"}},
+            "person_1": {
+                "aimharder_credentials": {
+                    "email_env": "PERSON_ONE_EMAIL",
+                    "password_env": "PERSON_ONE_PASSWORD",
+                }
+            },
+            "person_2": {
+                "aimharder_credentials": {
+                    "email_env": "PERSON_TWO_EMAIL",
+                    "password_env": "PERSON_TWO_PASSWORD",
+                }
+            },
         },
     }
     calls = []
@@ -58,7 +70,10 @@ def test_queries_separate_member_accounts_without_writes(monkeypatch):
         def get_classes_payload(self, day, family_id):
             calls.append(("get", self.email))
             committed = 12 if self.email == "one@example.test" else 9
-            return {"bookings": [], "clasesDisp": f"CrossFit ({committed}/17)<br>Open Box (0/4)<br>"}
+            return {
+                "bookings": [],
+                "clasesDisp": f"CrossFit ({committed}/17)<br>Open Box (0/4)<br>",
+            }
 
     response = credits.fetch_member_credits(
         config,
@@ -73,7 +88,6 @@ def test_queries_separate_member_accounts_without_writes(monkeypatch):
     assert calls[16:] == [("get", "two@example.test")] * 14
     assert all(item["error"] is None for item in response.values())
 
-
 def test_future_bookings_are_subtracted_from_committed():
     now = datetime(2026, 11, 17, 16, 0, tzinfo=ZoneInfo("Europe/Madrid"))
     days = []
@@ -82,20 +96,35 @@ def test_future_bookings_are_subtracted_from_committed():
         def get_classes_payload(self, target_day, family_id):
             days.append(target_day.date())
             if target_day.day == 18:
-                return {"bookings": [
-                    {"className": "CrossFit", "bookState": 1, "timeid": "1800_60"},
-                    {"className": "Open Box", "bookState": 1, "timeid": "1900_60"},
-                ]}
+                return {
+                    "bookings": [
+                        {
+                            "className": "CrossFit",
+                            "bookState": 1,
+                            "timeid": "1800_60",
+                        },
+                        {
+                            "className": "Open Box",
+                            "bookState": 1,
+                            "timeid": "1900_60",
+                        },
+                    ]
+                }
             return {"bookings": []}
 
-    initial = {"bookings": [
-        {"className": "CrossFit", "bookState": 1, "timeid": "1500_60"},
-        {"className": "CrossFit", "bookState": 1, "timeid": "1800_60"},
-        {"className": "CrossFit", "bookState": None, "timeid": "1900_60"},
-    ]}
+    initial = {
+        "bookings": [
+            {"className": "CrossFit", "bookState": 1, "timeid": "1500_60"},
+            {"className": "CrossFit", "bookState": 1, "timeid": "1800_60"},
+            {"className": "CrossFit", "bookState": None, "timeid": "1900_60"},
+        ]
+    }
     future = credits.count_future_bookings(
         FakeClient(),
-        {"activities": {"class": ["CrossFit"], "open_box": ["Open Box"]}, "family_id": None},
+        {
+            "activities": {"class": ["CrossFit"], "open_box": ["Open Box"]},
+            "family_id": None,
+        },
         now,
         initial,
     )
@@ -105,8 +134,12 @@ def test_future_bookings_are_subtracted_from_committed():
     balances = credits.parse_committed_credits("CrossFit (12/17)<br>Open Box (3/4)<br>")
     result = credits.separate_consumed_from_future(balances, future)
     assert result["classes"] == {
-        "committed": 12, "total": 17, "remaining": 5,
-        "upcoming_reserved": 2, "consumed": 10, "verified": True
+        "committed": 12,
+        "total": 17,
+        "remaining": 5,
+        "upcoming_reserved": 2,
+        "consumed": 10,
+        "verified": True,
     }
     assert result["open_box"]["consumed"] == 2
 
