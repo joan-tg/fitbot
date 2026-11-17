@@ -1,8 +1,6 @@
-"""Read-only live AimHarder credit availability for each configured member.
+"""Read-only AimHarder committed, future-reserved and elapsed credit totals.
 
-This endpoint never books classes and never writes to Redis.
-AimHarder's "clasesDisp" is labeled "Clases disponibles"; therefore the
-first number is treated as available, not as used. Verify with the gym.
+No booking or cancellation requests and no Redis writes.
 """
 import hmac
 import html
@@ -11,7 +9,7 @@ import logging
 import os
 import re
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -26,8 +24,8 @@ CREDIT_PAIR = re.compile(r"\(\s*(\d+)\s*/\s*(\d+)\s*\)")
 PERSON_IDS = ("person_1", "person_2")
 
 
-def parse_available_credits(value):
-    """Parse displayed available/total pairs; never invent absent categories."""
+def parse_committed_credits(value):
+    """Parse committed/total counts; never invent absent categories."""
     if not isinstance(value, str):
         raise ValueError("Missing clasesDisp")
     result = {"classes": None, "open_box": None}
@@ -38,19 +36,72 @@ def parse_available_credits(value):
         match = CREDIT_PAIR.search(segment)
         if not match:
             continue
-        available, total = map(int, match.groups())
-        if total > 1000 or available > total:
+        committed, total = map(int, match.groups())
+        if total > 1000 or committed > total:
             raise ValueError("Invalid AimHarder credit numbers")
         category = "open_box" if "open box" in segment.casefold() else "classes"
         if result[category] is not None:
             raise ValueError("Ambiguous AimHarder credit category")
         result[category] = {
-            "available": available,
+            "committed": committed,
             "total": total,
-            "used_inferred": total - available,
+            "remaining": total - committed,
         }
     if all(value is None for value in result.values()):
         raise ValueError("No recognizable credit balances")
+    return result
+
+
+
+def count_future_bookings(client, config, now, first_payload):
+    """Count confirmed reservations starting later this calendar month."""
+    zone = now.tzinfo
+    allowed = config.get("activities", {})
+    classes = set(allowed.get("class", []))
+    open_box = set(allowed.get("open_box", []))
+    future = {"classes": 0, "open_box": 0}
+    day = now.date()
+    while day.year == now.year and day.month == now.month:
+        local_day = datetime.combine(day, datetime.min.time(), tzinfo=zone)
+        payload = first_payload if day == now.date() else client.get_classes_payload(
+            local_day, config.get("family_id")
+        )
+        rows = payload.get("bookings") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise ValueError("Bookings are missing for a calendar day")
+        for booking in rows:
+            if not isinstance(booking, dict) or booking.get("bookState") != 1:
+                continue
+            name = booking.get("className")
+            category = "open_box" if name in open_box else "classes" if name in classes else None
+            if category is None:
+                raise ValueError("Unrecognized booked activity")
+            time_id = str(booking.get("timeid", "")).split("_", 1)[0]
+            if not re.fullmatch(r"[0-2][0-9][0-5][0-9]", time_id):
+                raise ValueError("Unrecognized booked time")
+            start = datetime.combine(
+                day, datetime.strptime(time_id, "%H%M").time(), tzinfo=zone
+            )
+            if start > now:
+                future[category] += 1
+        day += timedelta(days=1)
+    return future
+
+
+def separate_consumed_from_future(balances, future):
+    result = {}
+    for category, item in balances.items():
+        if item is None:
+            result[category] = None
+        else:
+            upcoming = future[category]
+            committed = item["committed"]
+            result[category] = {
+                **item,
+                "upcoming_reserved": upcoming,
+                "consumed": committed - upcoming if upcoming <= committed else None,
+                "verified": upcoming <= committed,
+            }
     return result
 
 
@@ -78,8 +129,17 @@ def fetch_member_credits(config, client_factory=AimHarderClient, today=None):
             payload = client.get_classes_payload(today, config.get("family_id"))
             if not isinstance(payload, dict):
                 raise ValueError("Invalid AimHarder response")
-            balances = parse_available_credits(payload.get("clasesDisp"))
-            records[person_id] = {"balances": balances, "error": None}
+            balances = parse_committed_credits(payload.get("clasesDisp"))
+            try:
+                future = count_future_bookings(client, config, today, payload)
+                balances = separate_consumed_from_future(balances, future)
+                records[person_id] = {"balances": balances, "error": None}
+            except Exception:
+                logger.exception("Could not verify future bookings for %s", person_id)
+                records[person_id] = {
+                    "balances": balances,
+                    "error": "future_bookings_unavailable",
+                }
         except Exception:
             logger.exception("Could not read AimHarder credits for %s", person_id)
             records[person_id] = {"balances": None, "error": "credits_unavailable"}
@@ -100,8 +160,8 @@ class handler(BaseHTTPRequestHandler):
             balances = fetch_member_credits(config)
             return self._respond(200, {
                 "source": "aimharder_clasesDisp",
-                "interpretation": "available_over_total",
-                "verified_as_consumed": False,
+                "interpretation": "committed_over_total",
+                "consumed_formula": "committed_minus_future_reserved_this_month",
                 "members": balances,
                 "read_only": True,
             })
