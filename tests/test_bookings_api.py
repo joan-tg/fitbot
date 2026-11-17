@@ -571,7 +571,7 @@ def test_qstash_429_logs_only_allowlisted_numeric_reset_fields(monkeypatch, capl
     import requests
 
     class FakeRedis:
-        def update_booking_status(self, booking_id, status, expected_statuses, metadata=None):
+        def update_booking_status(\n            self, booking_id, status, expected_statuses, metadata=None\n        ):
             return {"id": booking_id, "status": status}
 
     class FakeResponse:
@@ -589,7 +589,7 @@ def test_qstash_429_logs_only_allowlisted_numeric_reset_fields(monkeypatch, capl
 
     monkeypatch.setenv("QSTASH_TOKEN", "TOP_SECRET_TOKEN")
     monkeypatch.setenv("FITBOT_WEBHOOK_URL", "https://fitbot.example/api/book")
-    monkeypatch.setattr(bookings_api.requests, "post", lambda *args, **kwargs: FakeResponse())
+    monkeypatch.setattr(\n        bookings_api.requests, "post", lambda *args, **kwargs: FakeResponse()\n    )
     booking = {
         "id": "test-123",
         "opens_at": "2026-11-18T13:00:00+01:00",
