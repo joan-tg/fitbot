@@ -513,6 +513,19 @@
     } catch(error) { toast("No se han podido verificar los mensajes: "+error.message); }
     finally { button.disabled=false; }
   });
+  $("recover-bookings").addEventListener("click",async()=>{
+    if(state.environment!=="production"||state.bookingMode!=="live"){
+      toast("La recuperación solo está disponible para reservas reales en Production.");return;
+    }
+    if(!confirm("FitBot intentará recuperar las programaciones fallidas ya existentes. Esta acción puede publicar tareas pendientes en QStash, pero NO reservará clases ahora en AimHarder ni creará nuevas reservas en FitBot. ¿Continuar?")) return;
+    const button=$("recover-bookings");button.disabled=true;
+    try {
+      const data=await request("/api/reconcile");
+      await refreshAll();
+      toast("Recuperación: "+data.republished+" programadas · "+data.errors+" errores · "+data.missed+" fuera de plazo. Revisa el historial.");
+    } catch(error) { toast("Recuperación no completada: "+error.message); }
+    finally { button.disabled=false; }
+  });
   $("logout-button").addEventListener("click",()=>{
     state.token="";sessionStorage.removeItem("fitbot_admin_token");$("admin-token").value="";state.bookingMode="unknown";showDashboard(false);
   });

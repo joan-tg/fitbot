@@ -565,3 +565,55 @@ def test_list_endpoint_exposes_actual_environment_and_booking_mode(
     assert data["environment"] == environment
     assert data["booking_mode"] == expected_mode
     assert data["bookings"] == []
+
+
+def test_qstash_429_logs_only_allowlisted_numeric_reset_fields(monkeypatch, caplog):
+    import requests
+
+    class FakeRedis:
+        def update_booking_status(
+            self, booking_id, status, expected_statuses, metadata=None
+        ):
+            return {"id": booking_id, "status": status}
+
+    class FakeResponse:
+        status_code = 429
+        headers = {
+            "Retry-After": "120",
+            "Burst-RateLimit-Reset": "1794959999",
+            "X-RateLimit-Reset": "1794960000",
+            "Authorization": "SUPER_SECRET",
+            "Retry-After-Secret": "SUPER_SECRET",
+        }
+
+        def raise_for_status(self):
+            raise requests.HTTPError("429 Client Error", response=self)
+
+    monkeypatch.setenv("QSTASH_TOKEN", "TOP_SECRET_TOKEN")
+    monkeypatch.setenv("FITBOT_WEBHOOK_URL", "https://fitbot.example/api/book")
+    monkeypatch.setattr(
+        bookings_api.requests, "post", lambda *args, **kwargs: FakeResponse()
+    )
+    booking = {
+        "id": "test-123",
+        "opens_at": "2026-11-18T13:00:00+01:00",
+    }
+
+    with pytest.raises(requests.HTTPError):
+        bookings_api._publish_booking(booking, FakeRedis())
+    assert "QStash rejected publishing with HTTP 429" in caplog.text
+    assert "1794960000" in caplog.text
+    assert "SUPER_SECRET" not in caplog.text
+    assert "TOP_SECRET_TOKEN" not in caplog.text
+
+
+def test_manual_recovery_button_is_explicit_and_reuses_authenticated_endpoint():
+    root = Path(__file__).resolve().parents[1]
+    if not (root / "public" / "index.html").exists():
+        pytest.skip("Static UI files are not included in the Docker test image")
+    html = (root / "public" / "index.html").read_text(encoding="utf-8")
+    script = (root / "public" / "app.js").read_text(encoding="utf-8")
+    assert 'id="recover-bookings"' in html
+    assert 'request("/api/reconcile")' in script
+    assert "NO reservará clases ahora en AimHarder" in script
+    assert 'state.environment!=="production"' in script

@@ -199,6 +199,22 @@ def _publish_booking(booking, redis):
             headers=headers,
             timeout=10,
         )
+        if getattr(response, "status_code", None) == 429:
+            # Log only allowlisted rate-limit metadata. Never log the response
+            # body, request headers, destination token or QStash credentials.
+            upstream_headers = getattr(response, "headers", {}) or {}
+            allowed = (
+                "Retry-After",
+                "Burst-RateLimit-Reset",
+                "X-RateLimit-Reset",
+            )
+            details = {
+                key: str(upstream_headers[key])[:64]
+                for key in allowed
+                if key in upstream_headers
+                and re.fullmatch(r"[0-9]{1,16}", str(upstream_headers[key]))
+            }
+            logger.warning("QStash rejected publishing with HTTP 429: %s", details)
         response.raise_for_status()
         message_id = response.json().get("messageId")
         if not message_id:
@@ -346,8 +362,22 @@ class handler(BaseHTTPRequestHandler):
             return _respond(self, 403, {"error": str(error)})
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
             return _respond(self, 400, {"error": str(error)})
-        except requests.RequestException:
+        except requests.RequestException as error:
             logger.exception("Could not publish booking to QStash")
+            upstream = getattr(error, "response", None)
+            if getattr(upstream, "status_code", None) == 429:
+                return _respond(
+                    self,
+                    503,
+                    {
+                        "error": (
+                            "QStash ha rechazado la programación (HTTP 429). "
+                            "La reserva permanece pendiente de recuperación; "
+                            "comprueba los límites de Upstash."
+                        ),
+                        "error_code": "qstash_rate_limited",
+                    },
+                )
             return _respond(self, 502, {"error": "QStash scheduling failed"})
         except RedisUnavailable:
             logger.exception("Redis booking store unavailable")
