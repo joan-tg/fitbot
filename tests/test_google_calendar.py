@@ -83,6 +83,7 @@ def test_missing_configuration_fails_closed(monkeypatch):
 
 def test_insert_is_idempotent_and_handles_existing_event(monkeypatch):
     import json
+
     # The Docker test image does not include the optional Google SDK.
     # Supply fake modules to exercise the integration without credentials.
     google = ModuleType("google")
