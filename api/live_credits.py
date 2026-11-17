@@ -2,6 +2,7 @@
 
 No booking or cancellation requests and no Redis writes.
 """
+
 import hmac
 import html
 import json
@@ -176,13 +177,16 @@ class handler(BaseHTTPRequestHandler):
         try:
             config = load_config()
             balances = fetch_member_credits(config)
-            return self._respond(200, {
-                "source": "aimharder_clasesDisp",
-                "interpretation": "committed_over_total",
-                "consumed_formula": "committed_minus_future_reserved_this_month",
-                "members": balances,
-                "read_only": True,
-            })
+            return self._respond(
+                200,
+                {
+                    "source": "aimharder_clasesDisp",
+                    "interpretation": "committed_over_total",
+                    "consumed_formula": "committed_minus_future_reserved_this_month",
+                    "members": balances,
+                    "read_only": True,
+                },
+            )
         except Exception:
             logger.exception("Live credit lookup failed")
             return self._respond(503, {"error": "Live credits unavailable"})
