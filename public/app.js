@@ -216,7 +216,8 @@
     };
     const compactQuota=(label,quota)=>{
       if(quota.source==="live") return '<div class="quota-mini"><span class="quota-mini-label">'+label+'</span>'+
-        '<strong class="quota-mini-free">'+quota.free+' libres</strong>'+
+        '<strong class="quota-mini-free">'+quota.free+' libres</strong>'+ 
+        '<span class="quota-mini-fraction">'+quota.committed+'/'+quota.limit+' comprometidos</span>'+
         '<small>'+quota.used+' realizadas · '+quota.upcoming+' reservadas</small></div>';
       if(quota.source==="manual") return '<div class="quota-mini"><span class="quota-mini-label">'+label+'</span>'+
         '<strong>'+quota.used+' realizadas</strong><small>Respaldo manual · libres sin verificar</small></div>';

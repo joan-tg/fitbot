@@ -94,3 +94,12 @@ def test_compact_credits_appear_in_simple_view_with_manual_fallback():
     assert ".quota-compact" in css
     assert "grid-template-columns:1fr;gap:7px" in css
     assert " .quota-intro{display:none}" in css
+
+
+def test_compact_monthly_credits_show_committed_over_total_and_free():
+    script = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    assert "quota.committed+'/'+quota.limit" in script
+    assert "quota.free+' libres" in script
+    assert "Contraseña de acceso" in html
+    assert 'placeholder="FITBOT_ADMIN_TOKEN"' not in html
