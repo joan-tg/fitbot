@@ -625,36 +625,57 @@
     event.preventDefault();
     const button=$("schedule-button"), error=$("booking-error"), success=$("booking-success");
     error.textContent="";success.textContent="";button.disabled=true;
-    const payload={
-      person_id:$("person").value,
-      date:$("class-date").value,
-      time:$("class-time").value,
-      name:$("activity").value
-    };
-    try {
-      const editingId=state.editingBookingId;
-      const fingerprint=JSON.stringify(payload);
-      if(editingId && state.editingFingerprint!==fingerprint){
-        state.editingFingerprint=fingerprint;
-        state.editingIdempotencyKey="fitbot-ui-"+crypto.randomUUID();
-      }
-      const key=editingId ? state.editingIdempotencyKey : "fitbot-ui-"+crypto.randomUUID();
-      const body=editingId ? {id:editingId,...payload} : payload;
-      const data=await request("/api/bookings",{
-        method:editingId?"PATCH":"POST",
-        headers:{"Content-Type":"application/json","Idempotency-Key":key},
-        body:JSON.stringify(body)
-      });
-      success.textContent=(editingId?"Reserva modificada. ":"Reserva programada. ")+"Apertura: "+dateTime(data.booking?.opens_at)+". Estado: "+statusName(data.status)+"."; 
-      state.editingBookingId=null;
-      state.editingIdempotencyKey=null;
-      state.editingFingerprint=null;
-      button.textContent="Programar reserva →";
-      $("stop-editing").hidden=true;
-      toast(editingId?"Cambios guardados":"Automatización creada");
-      await refreshAll();
-    } catch(err) { error.textContent=err.message; }
-    finally {button.disabled=false;}
+    const selection=$("person").value;
+    const members=selection==="both"?["person_1","person_2"]:[selection];
+    const base={date:$("class-date").value,time:$("class-time").value,name:$("activity").value};
+    const editingId=state.editingBookingId;
+    if(editingId && selection==="both") {
+      error.textContent="Al editar una reserva, selecciona solo a Joan o Paula.";button.disabled=false;return;
+    }
+    if(state.environment==="preview"||state.bookingMode==="unknown") {
+      error.textContent="Esta vista no permite programar reservas.";button.disabled=false;return;
+    }
+    const fingerprint=JSON.stringify({members,base,editingId});
+    if(!state.submissionKeys||state.submissionFingerprint!==fingerprint){
+      state.submissionFingerprint=fingerprint;
+      state.submissionKeys=Object.fromEntries(members.map(id=>[id,"fitbot-ui-"+crypto.randomUUID()]));
+    }
+    const successes=[], failures=[];
+    for(const person_id of members){
+      const payload={person_id,...base};
+      try {
+        if(editingId && state.editingFingerprint!==JSON.stringify(payload)){
+          state.editingFingerprint=JSON.stringify(payload);
+          state.editingIdempotencyKey="fitbot-ui-"+crypto.randomUUID();
+        }
+        const key=editingId?state.editingIdempotencyKey:state.submissionKeys[person_id];
+        const body=editingId?{id:editingId,...payload}:payload;
+        const data=await request("/api/bookings",{
+          method:editingId?"PATCH":"POST",
+          headers:{"Content-Type":"application/json","Idempotency-Key":key},
+          body:JSON.stringify(body)
+        });
+        successes.push({person_id,data});
+      } catch(err){failures.push({person_id,message:err.message});}
+    }
+    if(successes.length){
+      success.textContent=successes.map(({person_id,data})=>
+        personName(person_id)+": "+(editingId?"cambios guardados":"programación creada")+" · "+
+        statusName(data.status)+" · apertura "+dateTime(data.booking?.opens_at)
+      ).join(" | ");
+      state.editingBookingId=null;state.editingIdempotencyKey=null;state.editingFingerprint=null;
+      button.textContent="Programar reserva →";$("stop-editing").hidden=true;
+      toast(successes.length+" programación"+(successes.length===1?" creada":"es creadas"));
+    }
+    if(failures.length){
+      error.textContent=failures.map(({person_id,message})=>personName(person_id)+": "+message).join(" | ")+
+        ". Puedes reintentar: se mantendrán los identificadores para evitar duplicados.";
+    } else {
+      state.submissionKeys=null;state.submissionFingerprint=null;
+    }
+    try { await refreshAll(); }
+    catch(err){error.textContent+=(error.textContent?" | ":"")+"No se pudo actualizar el calendario: "+err.message;}
+    button.disabled=state.environment==="preview"||state.bookingMode==="unknown";
   });
   const timeSelect=$("class-time");
   for(let minutes=7*60;minutes<=20*60+15;minutes+=15){
