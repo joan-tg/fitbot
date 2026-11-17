@@ -79,6 +79,53 @@ The authenticated `GET /api/sync` endpoint runs when the dashboard session is op
 
 Preview can safely be used to inspect the shared dashboard and validate read-only AimHarder checks. It cannot be used to test booking mutations until a separate Redis database is configured. No changes to QStash schedules, credentials, or `DRY_RUN`.
 
+## Google Calendar para Joan (opcional)
+
+FitBot puede crear automáticamente un evento en un calendario de Google **solo para
+Joan** después de que una reserva REAL termine con estado
+`booking_confirmed` o `already_booked` en AimHarder. No crea eventos al
+programar una reserva, en simulación, en Preview ni para Paula.
+
+- **Título:** mismo nombre de la clase, excepto `Strength Conditioning`,
+  que se presenta como `Strength & Conditioning`.
+- **Lugar:** `Studio CrossFit`.
+- **Inicio:** fecha y hora de la clase en `Europe/Madrid` (incluye horario de verano).
+- **Duración:** 60 minutos por defecto, configurable (AimHarder no expone
+  actualmente la duración en el registro de FitBot).
+- **Color:** Salvia (`colorId=2`).
+- **Aviso:** notificación emergente 30 minutos antes.
+- Se utiliza un identificador de evento estable derivado del identificador
+  interno de la reserva para evitar duplicados si se repite el envío.
+- Google Calendar es opcional: un fallo al crear el evento **nunca revierte,
+  repite ni modifica** la reserva de AimHarder. El fallo queda registrado en
+  los logs de Vercel; no hay reintento automático de sincronización de
+  Calendar en esta primera versión.
+- No borra eventos si una reserva se cancela posteriormente; esa sincronización
+  podría añadirse por separado.
+
+### Activación segura
+
+1. En un proyecto de Google Cloud controlado por Joan, habilitar **Google
+   Calendar API** y crear una **cuenta de servicio** con una clave JSON.
+2. En el Google Calendar de Joan, compartir el calendario de destino con el
+   correo electrónico de la cuenta de servicio y darle permiso para modificar
+   eventos. Puede ser un calendario secundario llamado «Studio CrossFit»,
+   visible desde el calendario principal. No compartir el JSON ni la clave
+   privada por GitHub o por el chat.
+3. En **Vercel → FitBot → Settings → Environment Variables**, configurar en
+   **Production únicamente**:
+   - `GOOGLE_CALENDAR_ID`: ID del calendario compartido (no necesariamente
+     el correo personal; en Google Calendar → Configuración → Integrar calendario).
+   - `GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON`: contenido completo del JSON de
+     la cuenta de servicio, guardado como secreto.
+   - `GOOGLE_CALENDAR_EVENT_MINUTES` (opcional): duración (1 a 720; por
+     defecto 60).
+4. Volver a desplegar Production para que las funciones lean las variables.
+
+**Nota:** La integración opera con una cuenta de servicio y con el calendario
+que se le comparta expresamente. No se obtiene acceso permanente a Google
+Calendar mediante un conector de la conversación de ChatGPT.
+
 ## Using env files
 
 You can use env files for configuration and credentials instead of passing them directly on the command line:

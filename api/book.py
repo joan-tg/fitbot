@@ -23,6 +23,7 @@ from qstash import Receiver
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from google_calendar import create_joan_calendar_event  # noqa: E402
 from scheduled import load_config, parse_local_datetime, run  # noqa: E402
 from exceptions import (  # noqa: E402
     AimHarderUnavailable,
@@ -508,10 +509,23 @@ class handler(BaseHTTPRequestHandler):
             outcome = "outcome_unconfirmed"
 
         save_history(outcome)
+        calendar_sync = "skipped"
+        if not dry_run and outcome in ("booking_confirmed", "already_booked"):
+            try:
+                calendar_sync = create_joan_calendar_event(
+                    booking, dry_run=dry_run, environment=os.environ.get("VERCEL_ENV")
+                )
+            except Exception:
+                calendar_sync = "failed"
+                logger.exception(
+                    "Google Calendar sync failed after AimHarder booking %s; booking remains confirmed",
+                    booking_id,
+                )
         return _response(
             self,
             200,
             {
+                "calendar_sync": calendar_sync,
                 "status": outcome,
                 "booking_id": booking_id,
                 "person_id": booking["person_id"],
