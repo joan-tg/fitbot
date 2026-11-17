@@ -143,10 +143,19 @@ def test_live_read_only_preserves_manual_store(monkeypatch):
     def fake_fetch(config):
         calls.append(config)
         return {
-            "person_1": {"balances": {"classes": {
-                "consumed": 7, "total": 17, "committed": 12,
-                "upcoming_reserved": 5, "remaining": 5, "verified": True
-            }}, "error": None},
+            "person_1": {
+                "balances": {
+                    "classes": {
+                        "consumed": 7,
+                        "total": 17,
+                        "committed": 12,
+                        "upcoming_reserved": 5,
+                        "remaining": 5,
+                        "verified": True,
+                    }
+                },
+                "error": None,
+            },
             "person_2": {"balances": None, "error": "credits_unavailable"},
         }
 
