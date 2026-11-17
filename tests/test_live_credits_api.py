@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import api.live_credits as credits
+import src.live_credits as credits
 
 
 def test_parses_committed_and_remaining():
