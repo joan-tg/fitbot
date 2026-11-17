@@ -1,4 +1,5 @@
 """Tests for diagnostic-only, read-only AimHarder credit lookup."""
+
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -87,6 +88,7 @@ def test_queries_separate_member_accounts_without_writes(monkeypatch):
     assert calls[15] == ("login", "two@example.test")
     assert calls[16:] == [("get", "two@example.test")] * 14
     assert all(item["error"] is None for item in response.values())
+
 
 def test_future_bookings_are_subtracted_from_committed():
     now = datetime(2026, 11, 17, 16, 0, tzinfo=ZoneInfo("Europe/Madrid"))
