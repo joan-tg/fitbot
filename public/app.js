@@ -157,57 +157,46 @@
     const monthDate=new Date(monthKey+"-01T12:00:00Z");
     $("quota-month").textContent=new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric",timeZone:"Europe/Madrid"}).format(monthDate);
     const records=historyRecords().filter(record=>record.date && record.date.slice(0,7)===monthKey);
+    const liveCurrent=state.liveCredits?.month===monthKey && state.liveCredits?.interpretation==="committed_over_total";
     const summaries=quotaPolicy.members.map(member=>{
       const personRecords=records.filter(record=>record.person_id===member.id);
       const count=(type)=>personRecords.filter(record=>
         quotaActivityType(record)===type && quotaPolicy.countedStatuses.has(record.status)
       ).length;
       const manual=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts?.[member.id]:null;
-      return {
-        ...member,
-        classReservations:count("class"),
-        openBoxReservations:count("open_box"),
-        classesUsed:manual?.classes,
-        openBoxUsed:manual?.open_box
+      const live=liveCurrent?state.liveCredits.members?.[member.id]:null;
+      const quota=(category,limit)=>{
+        const b=live?.error===null?live.balances?.[category]:null;
+        const valid=b?.verified===true && Number.isInteger(b.consumed) && b.consumed>=0
+          && Number.isInteger(b.total) && b.total>0 && Number.isInteger(b.committed)
+          && Number.isInteger(b.upcoming_reserved) && Number.isInteger(b.remaining)
+          && b.consumed+b.upcoming_reserved===b.committed && b.committed+b.remaining===b.total;
+        if(valid) return {used:b.consumed,limit:b.total,source:"live",committed:b.committed,upcoming:b.upcoming_reserved,free:b.remaining};
+        const used=manual?.[category];
+        return {used,limit,source:Number.isInteger(used)?"manual":"unknown"};
       };
+      return {...member,classReservations:count("class"),openBoxReservations:count("open_box"),
+        classesQuota:quota("classes",member.classes),openBoxQuota:quota("open_box",member.openBox)};
     });
-    const renderQuota=(label,used,limit,registered)=>{
-      if(!Number.isInteger(used)) {
-        return '<div class="quota-line"><span>'+label+'</span><strong>Consumo sin verificar</strong></div>'+
-          '<small class="muted">FitBot conoce '+registered+' reserva'+(registered===1?'':'s')+' del mes; no equivale a créditos utilizados.</small>';
-      }
+    const renderQuota=(label,quota,registered)=>{
+      const {used,limit,source}=quota;
+      if(!Number.isInteger(used)) return '<div class="quota-line"><span>'+label+'</span><strong>Consumo sin verificar</strong></div>'+
+        '<small class="muted">Sin lectura válida de AimHarder ni respaldo manual · '+registered+' reservas registradas en FitBot</small>';
       const exceeded=used>limit, reached=used===limit;
-      const status=exceeded
-        ? "Has superado la cuota: "+used+"/"+limit
-        : reached ? "Cuota alcanzada: "+used+"/"+limit : used+" de "+limit+" utilizadas";
+      const status=exceeded?"Has superado la cuota: "+used+"/"+limit
+        :reached?"Cuota alcanzada: "+used+"/"+limit:used+" de "+limit+" realizadas";
+      const detail=source==="live"?
+        "AimHarder en directo · "+quota.committed+" comprometidos ("+used+" realizadas + "+quota.upcoming+" futuras) · "+quota.free+" libres"
+        :"Respaldo manual · "+registered+" reservas registradas en FitBot";
       return '<div class="quota-line'+(reached||exceeded?' quota-warning':'')+(exceeded?' quota-exceeded':'')+'"><span>'+label+'</span><strong>'+status+'</strong></div>'+
-        '<small class="muted">Dato introducido desde AimHarder · '+registered+' reservas registradas en FitBot</small>';
+        '<small class="muted">'+detail+'</small>';
     };
     $("quota-summary").innerHTML=summaries.map(member=>
       '<article class="quota-person"><h3>'+member.name+'</h3>'+
-      renderQuota("Clases",member.classesUsed,member.classes,member.classReservations)+
-      renderQuota("Open Box",member.openBoxUsed,member.openBox,member.openBoxReservations)+
+      renderQuota("Clases",member.classesQuota,member.classReservations)+
+      renderQuota("Open Box",member.openBoxQuota,member.openBoxReservations)+
       '</article>'
     ).join("");
-    // Read-only diagnostics; retain manual values until the source is verified in production.
-    if(state.liveCredits?.members) {
-      const labels = {person_1:"Joan",person_2:"Paula"};
-      const diagnostics = Object.entries(labels).map(([personId, name])=>{
-        const item=state.liveCredits.members[personId];
-        if(!item?.balances) return "<p>"+name+": consulta en directo no disponible (se mantienen los datos manuales).</p>";
-        const render=(key,label)=>{
-          const balance=item.balances[key];
-          if(!balance) return label+": no indicado por AimHarder";
-          const committed=balance.committed+" de "+balance.total+" comprometidos";
-          return label+": "+committed+" · "+balance.remaining+" libres · "+
-            (Number.isInteger(balance.consumed)
-              ? balance.consumed+" realizadas y "+balance.upcoming_reserved+" futuras reservadas"
-              : "consumo realizado no verificado");
-        };
-        return "<p><strong>"+name+"</strong> · "+render("classes","Clases")+" · "+render("open_box","Open Box")+"</p>";
-      }).join("");
-      $("quota-summary").innerHTML += '<div class="quota-person"><strong>Consulta directa a AimHarder</strong><small class="muted">Los créditos comprometidos incluyen clases realizadas y reservas futuras. El consumo se calcula restando las reservas futuras de este mes; se mantienen los datos manuales hasta verificar ambos usuarios.</small>'+diagnostics+"</div>";
-    }
     $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly;
     const saved=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts:null;
     const values=[
