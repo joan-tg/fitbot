@@ -91,6 +91,6 @@ def test_compact_credits_appear_in_simple_view_with_manual_fallback():
     assert "quota.upcoming" in script
     assert "Respaldo manual · libres sin verificar" in script
     assert "renderQuotaWarnings();" in script
-    assert '.quota-compact' in css
-    assert 'grid-template-columns:1fr;gap:7px' in css
-    assert ' .quota-intro{display:none}' in css
+    assert ".quota-compact" in css
+    assert "grid-template-columns:1fr;gap:7px" in css
+    assert " .quota-intro{display:none}" in css
