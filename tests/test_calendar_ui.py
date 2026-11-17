@@ -35,10 +35,10 @@ def test_calendar_groups_matching_classes_without_collapsing_history():
 
 def test_monthly_quota_prefers_verified_live_and_retains_manual_fallback():
     script = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
-    assert 'state.liveCredits?.month===monthKey' in script
-    assert 'b?.verified===true' in script
-    assert 'b.consumed+b.upcoming_reserved===b.committed' in script
-    assert 'b.committed+b.remaining===b.total' in script
+    assert "state.liveCredits?.month===monthKey" in script
+    assert "b?.verified===true" in script
+    assert "b.consumed+b.upcoming_reserved===b.committed" in script
+    assert "b.committed+b.remaining===b.total" in script
     assert 'if(valid) return {used:b.consumed,limit:b.total,source:"live"' in script
     assert 'return {used,limit,source:Number.isInteger(used)?"manual":"unknown"};' in script
     assert 'quota("classes",member.classes)' in script
