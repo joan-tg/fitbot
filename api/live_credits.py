@@ -54,14 +54,18 @@ def parse_committed_credits(value):
 
 
 def count_future_bookings(client, config, now, first_payload):
-    """Count confirmed reservations starting later this calendar month."""
+    """Count upcoming bookings within the configured 72h advance-booking window."""
+    if config.get("booking_policy", {}).get("opening_lead_hours") != 72:
+        raise ValueError("Unknown booking advance policy")
     zone = now.tzinfo
     allowed = config.get("activities", {})
     classes = set(allowed.get("class", []))
     open_box = set(allowed.get("open_box", []))
     future = {"classes": 0, "open_box": 0}
     day = now.date()
-    while day.year == now.year and day.month == now.month:
+    # Four calendar days ahead also covers daylight-saving changes.
+    last_day = day + timedelta(days=4)
+    while day <= last_day and day.year == now.year and day.month == now.month:
         local_day = datetime.combine(day, datetime.min.time(), tzinfo=zone)
         payload = (
             first_payload
@@ -182,7 +186,7 @@ class handler(BaseHTTPRequestHandler):
                 {
                     "source": "aimharder_clasesDisp",
                     "interpretation": "committed_over_total",
-                    "consumed_formula": "committed_minus_future_reserved_this_month",
+                    "consumed_formula": "committed_minus_future_reserved_72h_window",
                     "members": balances,
                     "read_only": True,
                 },
