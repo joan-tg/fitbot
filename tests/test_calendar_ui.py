@@ -80,3 +80,17 @@ def test_environment_is_reported_by_server_not_hardcoded():
     assert 'id="booking-mode-title"' in html
     assert "sessionInfo.booking_mode" in script
     assert "bookingData.booking_mode" in script
+
+
+def test_compact_credits_appear_in_simple_view_with_manual_fallback():
+    script = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    css = (ROOT / "public" / "styles.css").read_text(encoding="utf-8")
+    assert 'compactQuota("Clases",member.classesQuota)' in script
+    assert 'compactQuota("Open Box",member.openBoxQuota)' in script
+    assert "quota.free" in script
+    assert "quota.upcoming" in script
+    assert "Respaldo manual · libres sin verificar" in script
+    assert "renderQuotaWarnings();" in script
+    assert ".quota-compact" in css
+    assert "grid-template-columns:1fr;gap:7px" in css
+    assert " .quota-intro{display:none}" in css

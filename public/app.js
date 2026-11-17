@@ -52,6 +52,7 @@
     try { localStorage.setItem("fitbot_detailed_view",state.detailed?"1":"0"); } catch (_) {}
     setAgendaView(state.detailed?"history":"calendar");
     renderCalendar();
+    renderQuotaWarnings();
   }
   $("toggle-detail").addEventListener("click",()=>setView(!state.detailed));
   async function request(path, options={}) {
@@ -213,12 +214,28 @@
       return '<div class="quota-line'+(reached||exceeded?' quota-warning':'')+(exceeded?' quota-exceeded':'')+'"><span>'+label+'</span><strong>'+status+'</strong></div>'+
         '<small class="muted">'+detail+'</small>';
     };
-    $("quota-summary").innerHTML=summaries.map(member=>
-      '<article class="quota-person"><h3>'+member.name+'</h3>'+
-      renderQuota("Clases",member.classesQuota,member.classReservations)+
-      renderQuota("Open Box",member.openBoxQuota,member.openBoxReservations)+
-      '</article>'
-    ).join("");
+    const compactQuota=(label,quota)=>{
+      if(quota.source==="live") return '<div class="quota-mini"><span class="quota-mini-label">'+label+'</span>'+
+        '<strong class="quota-mini-free">'+quota.free+' libres</strong>'+
+        '<small>'+quota.used+' realizadas · '+quota.upcoming+' reservadas</small></div>';
+      if(quota.source==="manual") return '<div class="quota-mini"><span class="quota-mini-label">'+label+'</span>'+
+        '<strong>'+quota.used+' realizadas</strong><small>Respaldo manual · libres sin verificar</small></div>';
+      return '<div class="quota-mini"><span class="quota-mini-label">'+label+'</span>'+
+        '<strong>Sin verificar</strong><small>Consulta de AimHarder no disponible</small></div>';
+    };
+    $("quota-summary").innerHTML=state.detailed
+      ? summaries.map(member=>
+        '<article class="quota-person"><h3>'+member.name+'</h3>'+
+        renderQuota("Clases",member.classesQuota,member.classReservations)+
+        renderQuota("Open Box",member.openBoxQuota,member.openBoxReservations)+
+        '</article>'
+      ).join("")
+      : summaries.map(member=>
+        '<article class="quota-person quota-compact"><h3>'+member.name+'</h3>'+
+        compactQuota("Clases",member.classesQuota)+
+        compactQuota("Open Box",member.openBoxQuota)+
+        '</article>'
+      ).join("");
     $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly;
     const saved=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts:null;
     const values=[
