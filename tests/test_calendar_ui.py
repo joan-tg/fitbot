@@ -101,5 +101,5 @@ def test_compact_monthly_credits_show_committed_over_total_and_free():
     html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
     assert "quota.committed+'/'+quota.limit" in script
     assert "quota.free+' libres" in script
-    assert 'Contraseña de acceso' in html
+    assert "Contraseña de acceso" in html
     assert 'placeholder="FITBOT_ADMIN_TOKEN"' not in html
