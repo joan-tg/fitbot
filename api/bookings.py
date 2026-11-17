@@ -578,7 +578,18 @@ class handler(BaseHTTPRequestHandler):
             return _respond(
                 self,
                 200,
-                {"count": len(bookings), "bookings": bookings},
+                {
+                    "count": len(bookings),
+                    "bookings": bookings,
+                    "environment": os.environ.get("VERCEL_ENV"),
+                    "booking_mode": (
+                        "read_only"
+                        if os.environ.get("VERCEL_ENV") == "preview"
+                        else "live"
+                        if os.environ.get("DRY_RUN", "true").lower() == "false"
+                        else "simulation"
+                    ),
+                },
             )
         except RedisUnavailable:
             logger.exception("Redis booking store unavailable during listing")

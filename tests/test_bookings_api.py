@@ -534,3 +534,34 @@ def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatc
     assert updates[0][1] == "replaced"
     expected_hash = hashlib.sha256(request_key.encode()).hexdigest()
     assert updates[0][3]["replacement_key_hash"] == expected_hash
+
+
+@pytest.mark.parametrize(
+    ("environment", "dry_run", "expected_mode"),
+    [
+        ("production", "false", "live"),
+        ("production", "true", "simulation"),
+        ("preview", "false", "read_only"),
+    ],
+)
+def test_list_endpoint_exposes_actual_environment_and_booking_mode(
+    monkeypatch, environment, dry_run, expected_mode
+):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin-test")
+    monkeypatch.setenv("VERCEL_ENV", environment)
+    monkeypatch.setenv("DRY_RUN", dry_run)
+
+    class ReadOnlyStore:
+        def list_bookings(self, limit):
+            assert limit == 1
+            return []
+
+    monkeypatch.setattr(bookings_api, "UpstashRedis", ReadOnlyStore)
+    request = FakeHandler({})
+    request.path = "/api/bookings?limit=1"
+    bookings_api.handler.do_GET(request)
+    data = json.loads(request.wfile.getvalue())
+    assert request.status == 200
+    assert data["environment"] == environment
+    assert data["booking_mode"] == expected_mode
+    assert data["bookings"] == []

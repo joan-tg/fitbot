@@ -44,3 +44,39 @@ def test_monthly_quota_prefers_verified_live_and_retains_manual_fallback():
     assert 'Number.isInteger(used)?"manual":"unknown"};' in script
     assert 'quota("classes",member.classes)' in script
     assert 'quota("open_box",member.openBox)' in script
+
+
+def test_simple_mode_keeps_credits_booking_and_calendar():
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    css = (ROOT / "public" / "styles.css").read_text(encoding="utf-8")
+    assert 'id="dashboard" data-view="simple"' in html
+    assert 'id="quota-summary"' in html
+    assert 'id="booking-form"' in html
+    assert 'id="calendar-panel"' in html
+    assert 'id="toggle-detail"' in html
+    assert 'data-view="simple"' in css
+    assert "#monthly-credits-form" in css
+    assert "setView(savedDetailed)" in script
+    assert 'setAgendaView(state.detailed?"history":"calendar")' in script
+
+
+def test_dual_booking_uses_one_request_per_member_with_distinct_keys():
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    assert '<option value="both">Joan y Paula</option>' in html
+    assert '["person_1","person_2"]' in script
+    assert "state.submissionKeys[person_id]" in script
+    assert "failures.push({person_id,message:err.message})" in script
+    assert "Al editar una reserva, selecciona solo a Joan o Paula." in script
+
+
+def test_environment_is_reported_by_server_not_hardcoded():
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "app.js").read_text(encoding="utf-8")
+    assert "PREVIEW · SIMULACIÓN" not in html
+    assert "Las reservas reales están desactivadas" not in html
+    assert 'id="environment-indicator"' in html
+    assert 'id="booking-mode-title"' in html
+    assert "sessionInfo.booking_mode" in script
+    assert "bookingData.booking_mode" in script
