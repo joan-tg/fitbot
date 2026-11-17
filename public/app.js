@@ -1,8 +1,8 @@
 (() => {
   "use strict";
-  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits" };
+  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits", liveCredits: "/api/live_credits" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false, liveCredits: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -189,6 +189,22 @@
       renderQuota("Open Box",member.openBoxUsed,member.openBox,member.openBoxReservations)+
       '</article>'
     ).join("");
+    // Diagnostic only until available/total semantics are checked with AimHarder.
+    if(state.liveCredits?.members) {
+      const labels = {person_1:"Joan",person_2:"Paula"};
+      const diagnostics = Object.entries(labels).map(([personId, name])=>{
+        const item=state.liveCredits.members[personId];
+        if(!item?.balances) return "<p>"+name+": consulta en directo no disponible (se mantienen los datos manuales).</p>";
+        const render=(key,label)=>{
+          const balance=item.balances[key];
+          return balance
+            ? label+": "+balance.available+" disponibles de "+balance.total+" (consumo estimado: "+balance.used_inferred+")"
+            : label+": no indicado por AimHarder";
+        };
+        return "<p><strong>"+name+"</strong> · "+render("classes","Clases")+" · "+render("open_box","Open Box")+"</p>";
+      }).join("");
+      $("quota-summary").innerHTML += '<div class="quota-person"><strong>Consulta directa a AimHarder (verificación pendiente)</strong><small class="muted">AimHarder etiqueta estos valores como «Clases disponibles». Todavía no sustituyen los créditos introducidos manualmente.</small>'+diagnostics+"</div>";
+    }
     $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly;
     const saved=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts:null;
     const values=[
@@ -358,14 +374,16 @@
     </div>`).join("");
   }
   async function refreshAll(initialBookings) {
-    const [bookingData,resultData,creditsData]=await Promise.all([
+    const [bookingData,resultData,creditsData,liveCreditsData]=await Promise.all([
       initialBookings ? Promise.resolve(initialBookings) : request(API.bookings),
       request(API.results).catch(()=>({results:[]})),
-      request(API.credits).catch(()=>null)
+      request(API.credits).catch(()=>null),
+      request(API.liveCredits).catch(()=>null)
     ]);
     state.bookings=bookingData.bookings||[];
     state.results=resultData.results||[];
     state.monthlyCredits=creditsData;
+    state.liveCredits=liveCreditsData;
     state.monthlyCreditsReadOnly=creditsData?.read_only===true;
     renderStats(); renderQuotaWarnings(); renderBookings(); renderActivity(); renderCalendar();
     $("last-updated").textContent="Actualizado "+new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
