@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits", liveCredits: "/api/live_credits" };
+  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits", liveCredits: "/api/monthly_credits?source=live" };
   const $ = (id) => document.getElementById(id);
   const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false, liveCredits: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
