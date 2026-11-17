@@ -40,7 +40,7 @@ def test_monthly_quota_prefers_verified_live_and_retains_manual_fallback():
     assert "b.consumed+b.upcoming_reserved===b.committed" in script
     assert "b.committed+b.remaining===b.total" in script
     assert 'if(valid) return {used:b.consumed,limit:b.total,source:"live"' in script
-    assert 'return {used,limit,source:' in script
+    assert "return {used,limit,source:" in script
     assert 'Number.isInteger(used)?"manual":"unknown"};' in script
     assert 'quota("classes",member.classes)' in script
     assert 'quota("open_box",member.openBox)' in script
