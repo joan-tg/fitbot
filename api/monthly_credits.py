@@ -18,6 +18,8 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
+from live_credits import fetch_member_credits  # noqa: E402
+from scheduled import load_config  # noqa: E402
 
 logger = logging.getLogger("fitbot.monthly_credits")
 MONTH_PATTERN = re.compile(r"^20[0-9]{2}-(0[1-9]|1[0-2])$")
@@ -80,6 +82,23 @@ class handler(BaseHTTPRequestHandler):
             return self._respond(401, {"error": "Unauthorized"})
         if os.environ.get("VERCEL_ENV") not in ("production", "preview"):
             return self._respond(403, {"error": "Vercel only"})
+        if getattr(self, "path", "").partition("?")[2] == "source=live":
+            try:
+                members = fetch_member_credits(load_config())
+                return self._respond(
+                    200,
+                    {
+                        "month": _current_month(),
+                        "source": "aimharder_clasesDisp",
+                        "interpretation": "committed_over_total",
+                        "consumed_formula": "committed_minus_future_reserved_72h_window",
+                        "members": members,
+                        "read_only": True,
+                    },
+                )
+            except Exception:
+                logger.exception("Live credit lookup failed")
+                return self._respond(503, {"error": "Live credits unavailable"})
         try:
             month = _current_month()
             record = _read(UpstashRedis(), month)

@@ -129,3 +129,54 @@ def test_zero_is_valid_but_missing_is_unknown():
     counts["person_1"]["classes"] = 0
     counts["person_2"]["open_box"] = None
     credits._validate_counts(counts)
+
+
+def test_live_read_only_preserves_manual_store(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.setattr(credits, "_current_month", lambda: "2026-11")
+    monkeypatch.setattr(credits, "load_config", lambda: {"box_name": "test"})
+    store = FakeStore()
+    monkeypatch.setattr(credits, "UpstashRedis", lambda: store)
+    calls = []
+
+    def fake_fetch(config):
+        calls.append(config)
+        return {
+            "person_1": {
+                "balances": {
+                    "classes": {
+                        "consumed": 7,
+                        "total": 17,
+                        "committed": 12,
+                        "upcoming_reserved": 5,
+                        "remaining": 5,
+                        "verified": True,
+                    }
+                },
+                "error": None,
+            },
+            "person_2": {"balances": None, "error": "credits_unavailable"},
+        }
+
+    monkeypatch.setattr(credits, "fetch_member_credits", fake_fetch)
+    request = FakeHandler()
+    request.path = "/api/monthly_credits?source=live"
+    result = request.call("do_GET")
+    assert request.status == 200
+    assert result["month"] == "2026-11"
+    assert result["interpretation"] == "committed_over_total"
+    assert result["members"]["person_1"]["balances"]["classes"]["consumed"] == 7
+    assert result["members"]["person_2"]["error"] == "credits_unavailable"
+    assert result["read_only"] is True
+    assert store.calls == []
+    assert calls == [{"box_name": "test"}]
+
+
+def test_live_requires_authorization(monkeypatch):
+    monkeypatch.setenv("FITBOT_ADMIN_TOKEN", "admin")
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    request = FakeHandler(token="wrong")
+    request.path = "/api/monthly_credits?source=live"
+    assert request.call("do_GET") == {"error": "Unauthorized"}
+    assert request.status == 401

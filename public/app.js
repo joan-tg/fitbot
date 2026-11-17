@@ -1,8 +1,8 @@
 (() => {
   "use strict";
-  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits" };
+  const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits", liveCredits: "/api/monthly_credits?source=live" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false, liveCredits: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -157,36 +157,44 @@
     const monthDate=new Date(monthKey+"-01T12:00:00Z");
     $("quota-month").textContent=new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric",timeZone:"Europe/Madrid"}).format(monthDate);
     const records=historyRecords().filter(record=>record.date && record.date.slice(0,7)===monthKey);
+    const liveCurrent=state.liveCredits?.month===monthKey && state.liveCredits?.interpretation==="committed_over_total";
     const summaries=quotaPolicy.members.map(member=>{
       const personRecords=records.filter(record=>record.person_id===member.id);
       const count=(type)=>personRecords.filter(record=>
         quotaActivityType(record)===type && quotaPolicy.countedStatuses.has(record.status)
       ).length;
       const manual=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts?.[member.id]:null;
-      return {
-        ...member,
-        classReservations:count("class"),
-        openBoxReservations:count("open_box"),
-        classesUsed:manual?.classes,
-        openBoxUsed:manual?.open_box
+      const live=liveCurrent?state.liveCredits.members?.[member.id]:null;
+      const quota=(category,limit)=>{
+        const b=live?.error===null?live.balances?.[category]:null;
+        const valid=b?.verified===true && Number.isInteger(b.consumed) && b.consumed>=0
+          && Number.isInteger(b.total) && b.total>0 && Number.isInteger(b.committed)
+          && Number.isInteger(b.upcoming_reserved) && Number.isInteger(b.remaining)
+          && b.consumed+b.upcoming_reserved===b.committed && b.committed+b.remaining===b.total;
+        if(valid) return {used:b.consumed,limit:b.total,source:"live",committed:b.committed,upcoming:b.upcoming_reserved,free:b.remaining};
+        const used=manual?.[category];
+        return {used,limit,source:Number.isInteger(used)?"manual":"unknown"};
       };
+      return {...member,classReservations:count("class"),openBoxReservations:count("open_box"),
+        classesQuota:quota("classes",member.classes),openBoxQuota:quota("open_box",member.openBox)};
     });
-    const renderQuota=(label,used,limit,registered)=>{
-      if(!Number.isInteger(used)) {
-        return '<div class="quota-line"><span>'+label+'</span><strong>Consumo sin verificar</strong></div>'+
-          '<small class="muted">FitBot conoce '+registered+' reserva'+(registered===1?'':'s')+' del mes; no equivale a créditos utilizados.</small>';
-      }
+    const renderQuota=(label,quota,registered)=>{
+      const {used,limit,source}=quota;
+      if(!Number.isInteger(used)) return '<div class="quota-line"><span>'+label+'</span><strong>Consumo sin verificar</strong></div>'+
+        '<small class="muted">Sin lectura válida de AimHarder ni respaldo manual · '+registered+' reservas registradas en FitBot</small>';
       const exceeded=used>limit, reached=used===limit;
-      const status=exceeded
-        ? "Has superado la cuota: "+used+"/"+limit
-        : reached ? "Cuota alcanzada: "+used+"/"+limit : used+" de "+limit+" utilizadas";
+      const status=exceeded?"Has superado la cuota: "+used+"/"+limit
+        :reached?"Cuota alcanzada: "+used+"/"+limit:used+" de "+limit+" realizadas";
+      const detail=source==="live"?
+        "AimHarder en directo · "+quota.committed+" comprometidos ("+used+" realizadas + "+quota.upcoming+" futuras) · "+quota.free+" libres"
+        :"Respaldo manual · "+registered+" reservas registradas en FitBot";
       return '<div class="quota-line'+(reached||exceeded?' quota-warning':'')+(exceeded?' quota-exceeded':'')+'"><span>'+label+'</span><strong>'+status+'</strong></div>'+
-        '<small class="muted">Dato introducido desde AimHarder · '+registered+' reservas registradas en FitBot</small>';
+        '<small class="muted">'+detail+'</small>';
     };
     $("quota-summary").innerHTML=summaries.map(member=>
       '<article class="quota-person"><h3>'+member.name+'</h3>'+
-      renderQuota("Clases",member.classesUsed,member.classes,member.classReservations)+
-      renderQuota("Open Box",member.openBoxUsed,member.openBox,member.openBoxReservations)+
+      renderQuota("Clases",member.classesQuota,member.classReservations)+
+      renderQuota("Open Box",member.openBoxQuota,member.openBoxReservations)+
       '</article>'
     ).join("");
     $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly;
@@ -358,14 +366,16 @@
     </div>`).join("");
   }
   async function refreshAll(initialBookings) {
-    const [bookingData,resultData,creditsData]=await Promise.all([
+    const [bookingData,resultData,creditsData,liveCreditsData]=await Promise.all([
       initialBookings ? Promise.resolve(initialBookings) : request(API.bookings),
       request(API.results).catch(()=>({results:[]})),
-      request(API.credits).catch(()=>null)
+      request(API.credits).catch(()=>null),
+      request(API.liveCredits).catch(()=>null)
     ]);
     state.bookings=bookingData.bookings||[];
     state.results=resultData.results||[];
     state.monthlyCredits=creditsData;
+    state.liveCredits=liveCreditsData;
     state.monthlyCreditsReadOnly=creditsData?.read_only===true;
     renderStats(); renderQuotaWarnings(); renderBookings(); renderActivity(); renderCalendar();
     $("last-updated").textContent="Actualizado "+new Intl.DateTimeFormat("es-ES",{hour:"2-digit",minute:"2-digit"}).format(new Date());
