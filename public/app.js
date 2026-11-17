@@ -189,7 +189,7 @@
       renderQuota("Open Box",member.openBoxUsed,member.openBox,member.openBoxReservations)+
       '</article>'
     ).join("");
-    // Diagnostic only until available/total semantics are checked with AimHarder.
+    // Read-only diagnostics; retain manual values until the source is verified in production.
     if(state.liveCredits?.members) {
       const labels = {person_1:"Joan",person_2:"Paula"};
       const diagnostics = Object.entries(labels).map(([personId, name])=>{
@@ -197,13 +197,16 @@
         if(!item?.balances) return "<p>"+name+": consulta en directo no disponible (se mantienen los datos manuales).</p>";
         const render=(key,label)=>{
           const balance=item.balances[key];
-          return balance
-            ? label+": "+balance.available+" disponibles de "+balance.total+" (consumo estimado: "+balance.used_inferred+")"
-            : label+": no indicado por AimHarder";
+          if(!balance) return label+": no indicado por AimHarder";
+          const committed=balance.committed+" de "+balance.total+" comprometidos";
+          return label+": "+committed+" · "+balance.remaining+" libres · "+
+            (Number.isInteger(balance.consumed)
+              ? balance.consumed+" realizadas y "+balance.upcoming_reserved+" futuras reservadas"
+              : "consumo realizado no verificado");
         };
         return "<p><strong>"+name+"</strong> · "+render("classes","Clases")+" · "+render("open_box","Open Box")+"</p>";
       }).join("");
-      $("quota-summary").innerHTML += '<div class="quota-person"><strong>Consulta directa a AimHarder (verificación pendiente)</strong><small class="muted">AimHarder etiqueta estos valores como «Clases disponibles». Todavía no sustituyen los créditos introducidos manualmente.</small>'+diagnostics+"</div>";
+      $("quota-summary").innerHTML += '<div class="quota-person"><strong>Consulta directa a AimHarder</strong><small class="muted">Los créditos comprometidos incluyen clases realizadas y reservas futuras. El consumo se calcula restando las reservas futuras de este mes; se mantienen los datos manuales hasta verificar ambos usuarios.</small>'+diagnostics+"</div>";
     }
     $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly;
     const saved=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts:null;
