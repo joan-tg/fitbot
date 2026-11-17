@@ -52,7 +52,6 @@ def parse_committed_credits(value):
     return result
 
 
-
 def count_future_bookings(client, config, now, first_payload):
     """Count confirmed reservations starting later this calendar month."""
     zone = now.tzinfo
@@ -63,8 +62,10 @@ def count_future_bookings(client, config, now, first_payload):
     day = now.date()
     while day.year == now.year and day.month == now.month:
         local_day = datetime.combine(day, datetime.min.time(), tzinfo=zone)
-        payload = first_payload if day == now.date() else client.get_classes_payload(
-            local_day, config.get("family_id")
+        payload = (
+            first_payload
+            if day == now.date()
+            else client.get_classes_payload(local_day, config.get("family_id"))
         )
         rows = payload.get("bookings") if isinstance(payload, dict) else None
         if not isinstance(rows, list):
@@ -73,11 +74,17 @@ def count_future_bookings(client, config, now, first_payload):
             if not isinstance(booking, dict) or booking.get("bookState") != 1:
                 continue
             name = booking.get("className")
-            category = "open_box" if name in open_box else "classes" if name in classes else None
+            category = (
+                "open_box"
+                if name in open_box
+                else "classes"
+                if name in classes
+                else None
+            )
             if category is None:
                 raise ValueError("Unrecognized booked activity")
             time_id = str(booking.get("timeid", "")).split("_", 1)[0]
-            if not re.fullmatch(r"[0-2][0-9][0-5][0-9]", time_id):
+            if not re.fullmatch(r"(?:[01][0-9]|2[0-3])[0-5][0-9]", time_id):
                 raise ValueError("Unrecognized booked time")
             start = datetime.combine(
                 day, datetime.strptime(time_id, "%H%M").time(), tzinfo=zone
@@ -118,12 +125,17 @@ def fetch_member_credits(config, client_factory=AimHarderClient, today=None):
         email = os.environ.get(email_key) if email_key else None
         password = os.environ.get(password_key) if password_key else None
         if not email or not password:
-            records[person_id] = {"balances": None, "error": "credentials_unavailable"}
+            records[person_id] = {
+                "balances": None,
+                "error": "credentials_unavailable",
+            }
             continue
         try:
             client = client_factory(
-                email=email, password=password,
-                box_id=int(config["box_id"]), box_name=config["box_name"],
+                email=email,
+                password=password,
+                box_id=int(config["box_id"]),
+                box_name=config["box_name"],
                 proxy=os.environ.get("PROXY") or None,
             )
             payload = client.get_classes_payload(today, config.get("family_id"))
@@ -142,7 +154,10 @@ def fetch_member_credits(config, client_factory=AimHarderClient, today=None):
                 }
         except Exception:
             logger.exception("Could not read AimHarder credits for %s", person_id)
-            records[person_id] = {"balances": None, "error": "credits_unavailable"}
+            records[person_id] = {
+                "balances": None,
+                "error": "credits_unavailable",
+            }
     return records
 
 
@@ -150,8 +165,11 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         expected = os.environ.get("FITBOT_ADMIN_TOKEN", "")
         supplied = self.headers.get("Authorization", "")
-        if not (expected and supplied.startswith("Bearer ") and
-                hmac.compare_digest(supplied[7:], expected)):
+        if not (
+            expected
+            and supplied.startswith("Bearer ")
+            and hmac.compare_digest(supplied[7:], expected)
+        ):
             return self._respond(401, {"error": "Unauthorized"})
         if os.environ.get("VERCEL_ENV") not in ("production", "preview"):
             return self._respond(403, {"error": "Vercel only"})
