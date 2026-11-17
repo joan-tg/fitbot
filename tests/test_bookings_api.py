@@ -609,6 +609,8 @@ def test_qstash_429_logs_only_allowlisted_numeric_reset_fields(monkeypatch, capl
 
 def test_manual_recovery_button_is_explicit_and_reuses_authenticated_endpoint():
     root = Path(__file__).resolve().parents[1]
+    if not (root / "public" / "index.html").exists():
+        pytest.skip("Static UI files are not included in the Docker test image")
     html = (root / "public" / "index.html").read_text(encoding="utf-8")
     script = (root / "public" / "app.js").read_text(encoding="utf-8")
     assert 'id="recover-bookings"' in html
