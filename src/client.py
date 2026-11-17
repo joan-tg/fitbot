@@ -68,7 +68,7 @@ class AimHarderClient:
         logger.info("Logged successfully")
         return session
 
-    def get_classes(self, target_day: datetime, family_id: str | None = None):
+    def get_classes_payload(self, target_day: datetime, family_id: str | None = None):
         try:
             response = self.session.get(
                 classes_endpoint(self.box_name),
@@ -89,7 +89,10 @@ class AimHarderClient:
             payload.get("bookings"), list
         ):
             raise AimHarderUnavailable("AimHarder returned an invalid classes response")
-        return payload["bookings"]
+        return payload
+
+    def get_classes(self, target_day: datetime, family_id: str | None = None):
+        return self.get_classes_payload(target_day, family_id)["bookings"]
 
     def _is_class_booked(self, target_day, class_id, family_id=None):
         classes = self.get_classes(target_day, family_id)
