@@ -45,6 +45,7 @@ def test_queries_separate_member_accounts_without_writes(monkeypatch):
         "box_id": 9507,
         "box_name": "studiocrossfit",
         "family_id": None,
+        "booking_policy": {"opening_lead_hours": 72},
         "activities": {"class": ["CrossFit"], "open_box": ["Open Box"]},
         "members": {
             "person_1": {
@@ -84,9 +85,9 @@ def test_queries_separate_member_accounts_without_writes(monkeypatch):
     assert response["person_1"]["balances"]["classes"]["committed"] == 12
     assert response["person_2"]["balances"]["classes"]["committed"] == 9
     assert calls[0] == ("login", "one@example.test")
-    assert calls[1:15] == [("get", "one@example.test")] * 14
-    assert calls[15] == ("login", "two@example.test")
-    assert calls[16:] == [("get", "two@example.test")] * 14
+    assert calls[1:6] == [("get", "one@example.test")] * 5
+    assert calls[6] == ("login", "two@example.test")
+    assert calls[7:] == [("get", "two@example.test")] * 5
     assert all(item["error"] is None for item in response.values())
 
 
@@ -126,13 +127,14 @@ def test_future_bookings_are_subtracted_from_committed():
         {
             "activities": {"class": ["CrossFit"], "open_box": ["Open Box"]},
             "family_id": None,
+            "booking_policy": {"opening_lead_hours": 72},
         },
         now,
         initial,
     )
     assert future == {"classes": 2, "open_box": 1}
     assert days[0].day == 18
-    assert days[-1].day == 30
+    assert days[-1].day == 21
     balances = credits.parse_committed_credits("CrossFit (12/17)<br>Open Box (3/4)<br>")
     result = credits.separate_consumed_from_future(balances, future)
     assert result["classes"] == {
