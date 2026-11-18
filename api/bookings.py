@@ -466,8 +466,12 @@ class handler(BaseHTTPRequestHandler):
                 if other.get("id") == old_id:
                     continue
                 if other.get("status") in (
-                    "cancelled", "replaced", "booking_missed",
-                    "booking_failed", "class_not_found", "incorrect_credentials",
+                    "cancelled",
+                    "replaced",
+                    "booking_missed",
+                    "booking_failed",
+                    "class_not_found",
+                    "incorrect_credentials",
                 ):
                     continue
                 if (
