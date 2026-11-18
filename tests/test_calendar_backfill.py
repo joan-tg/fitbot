@@ -129,10 +129,10 @@ def test_backfill_rejects_preview_simulation_and_bad_credentials(monkeypatch):
 
 def test_idempotent_existing_event_is_not_reported_as_new(monkeypatch):
     configure(monkeypatch)
-    monkeypatch.setattr(
-        backfill, "create_joan_calendar_event",
-        lambda record, **kwargs: "already_exists",
-    )
+    def already_exists(record, **kwargs):
+        return "already_exists"
+
+    monkeypatch.setattr(backfill, "create_joan_calendar_event", already_exists)
     request = Request()
     result = request.run()
     assert request.status == 200
