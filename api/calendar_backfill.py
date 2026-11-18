@@ -103,13 +103,17 @@ class handler(BaseHTTPRequestHandler):
                     return _respond(
                         self,
                         409,
-                        {"error": "Una de las reservas aún no está confirmada en FitBot"},
+                        {
+                            "error": "Una de las reservas aún no está confirmada en FitBot"
+                        },
                     )
                 if any(booking.get(key) != value for key, value in expected.items()):
                     return _respond(
                         self,
                         409,
-                        {"error": "Los datos de la reserva no coinciden con los esperados"},
+                        {
+                            "error": "Los datos de la reserva no coinciden con los esperados"
+                        },
                     )
                 bookings.append(booking)
         except RedisUnavailable:
@@ -123,22 +127,28 @@ class handler(BaseHTTPRequestHandler):
                     booking, dry_run=False, environment="production"
                 )
                 if outcome not in ("created", "already_exists"):
-                    results.append({
-                        "booking_id": booking["id"],
-                        "status": "failed",
-                        "reason": outcome,
-                    })
+                    results.append(
+                        {
+                            "booking_id": booking["id"],
+                            "status": "failed",
+                            "reason": outcome,
+                        }
+                    )
                 else:
-                    results.append({
-                        "booking_id": booking["id"],
-                        "status": outcome,
-                    })
+                    results.append(
+                        {
+                            "booking_id": booking["id"],
+                            "status": outcome,
+                        }
+                    )
             except Exception as error:
                 response = getattr(error, "response", None)
                 status = getattr(response, "status_code", None)
                 logger.error(
                     "Calendar recovery failed for booking %s: %s status=%s",
-                    booking["id"], type(error).__name__, status,
+                    booking["id"],
+                    type(error).__name__,
+                    status,
                 )
                 results.append({"booking_id": booking["id"], "status": "failed"})
 

@@ -129,6 +129,7 @@ def test_backfill_rejects_preview_simulation_and_bad_credentials(monkeypatch):
 
 def test_idempotent_existing_event_is_not_reported_as_new(monkeypatch):
     configure(monkeypatch)
+
     def already_exists(record, **kwargs):
         return "already_exists"
 
