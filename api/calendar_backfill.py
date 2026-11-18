@@ -85,10 +85,13 @@ class handler(BaseHTTPRequestHandler):
             or set(payload) != {"booking_ids"}
             or not isinstance(payload["booking_ids"], list)
             or len(payload["booking_ids"]) != len(TARGETS)
+            or any(not isinstance(value, str) for value in payload["booking_ids"])
             or set(payload["booking_ids"]) != set(TARGETS)
         ):
             return _respond(
-                self, 400, {"error": "Selecciona exactamente las dos reservas previstas"}
+                self,
+                400,
+                {"error": "Selecciona exactamente las dos reservas previstas"},
             )
 
         try:
@@ -98,12 +101,14 @@ class handler(BaseHTTPRequestHandler):
                 booking = redis.get_booking(booking_id)
                 if not booking or booking.get("status") not in CONFIRMED_STATUSES:
                     return _respond(
-                        self, 409,
+                        self,
+                        409,
                         {"error": "Una de las reservas aún no está confirmada en FitBot"},
                     )
                 if any(booking.get(key) != value for key, value in expected.items()):
                     return _respond(
-                        self, 409,
+                        self,
+                        409,
                         {"error": "Los datos de la reserva no coinciden con los esperados"},
                     )
                 bookings.append(booking)
