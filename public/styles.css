@@ -133,3 +133,9 @@
 /* Monthly credit totals remain readable alongside free credits in compact view. */
 .quota-mini-fraction{font-size:10px;color:#bac7d6;white-space:nowrap}
 @media(max-width:560px){.quota-mini-fraction{font-size:9px;white-space:normal;line-height:1.25}}
+
+/* Month-aware quota: readable selector across desktop and mobile. */
+.quota-month-controls{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;min-width:0}
+.quota-month-controls select{color:var(--text);background:#0d1726;border:1px solid #304158;border-radius:8px;padding:7px 9px;font:600 11px "DM Sans",sans-serif;max-width:100%;min-height:34px}
+.quota-month-controls #quota-month{flex-basis:100%;text-align:right}
+@media(max-width:560px){.quota-heading{align-items:flex-start;gap:8px;flex-direction:column}.quota-month-controls{justify-content:flex-start;width:100%}.quota-month-controls #quota-month{text-align:left}}

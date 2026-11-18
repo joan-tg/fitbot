@@ -20,6 +20,16 @@ jobs:
         with:
           args: "format --check"
 
+  frontend:
+    name: Check dashboard JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate frontend JavaScript syntax
+        run: node --check public/app.js
+      - name: Test month-aware quota logic
+        run: node tests/test_quota_month.cjs
+
   tests:
     name: Run complete test suite
     runs-on: ubuntu-latest

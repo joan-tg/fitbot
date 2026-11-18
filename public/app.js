@@ -2,7 +2,7 @@
   "use strict";
   const API = { bookings: "/api/bookings?limit=100", results: "/api/results?limit=100", sync: "/api/sync", credits: "/api/monthly_credits", liveCredits: "/api/monthly_credits?source=live" };
   const $ = (id) => document.getElementById(id);
-  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false, liveCredits: null, bookingMode: "unknown", environment: "", detailed: false, submissionKeys: null, submissionFingerprint: null };
+  const state = { token: sessionStorage.getItem("fitbot_admin_token") || "", bookings: [], results: [], editingBookingId: null, editingIdempotencyKey: null, editingFingerprint: null, historyPerson: "all", historyStatus: "all", historyFrom: "", historyTo: "", calendarYear: new Date().getFullYear(), calendarMonth: new Date().getMonth(), selectedCalendarDate: null, monthlyCredits: null, monthlyCreditsReadOnly: false, liveCredits: null, quotaMonth: null, bookingMode: "unknown", environment: "", detailed: false, submissionKeys: null, submissionFingerprint: null };
   const personName = (id) => id === "person_1" ? "Joan" : id === "person_2" ? "Paula" : id || "—";
   const statusName = (status) => ({
     scheduled:"Programada", pending_schedule:"Pendiente", scheduling:"Programando",
@@ -170,17 +170,57 @@
     const month=parts.find(part=>part.type==="month").value;
     return year+"-"+month;
   }
+  function nextMonthKey(monthKey) {
+    const year=Number(monthKey.slice(0,4)), month=Number(monthKey.slice(5,7));
+    return month===12 ? (year+1)+"-01" : year+"-"+String(month+1).padStart(2,"0");
+  }
+  function quotaMonthLabel(monthKey) {
+    const monthDate=new Date(monthKey+"-01T12:00:00Z");
+    return new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric",timeZone:"Europe/Madrid"}).format(monthDate);
+  }
+  function selectedQuotaMonth() {
+    const current=madridMonthKey();
+    const next=nextMonthKey(current);
+    return state.quotaMonth===next?next:current;
+  }
+  function updateQuotaMonthSelector() {
+    const current=madridMonthKey(), next=nextMonthKey(current);
+    const select=$("quota-month-select");
+    const choices=[[current,quotaMonthLabel(current)],[next,quotaMonthLabel(next)]];
+    if(select.options.length!==2 || Array.from(select.options).some((option,i)=>option.value!==choices[i][0])){
+      select.innerHTML="";
+      choices.forEach(([value,label])=>{
+        const option=document.createElement("option");
+        option.value=value;option.textContent=label;select.append(option);
+      });
+    }
+    state.quotaMonth=selectedQuotaMonth();
+    select.value=state.quotaMonth;
+  }
+  $("quota-month-select").addEventListener("change",event=>{
+    state.quotaMonth=event.target.value;
+    renderQuotaWarnings();
+  });
+  $("class-date").addEventListener("change",event=>{
+    const month=String(event.target.value||"").slice(0,7);
+    const current=madridMonthKey(), next=nextMonthKey(current);
+    if(month===current||month===next){
+      state.quotaMonth=month;
+      renderQuotaWarnings();
+    }
+  });
   function quotaActivityType(record) {
     if(record.activity_type==="open_box" || record.activity_type==="class") return record.activity_type;
     const activity=String(record.name||record.class||"").trim().toLocaleLowerCase("es");
     return activity==="open box" ? "open_box" : "class";
   }
   function renderQuotaWarnings() {
-    const monthKey=madridMonthKey();
-    const monthDate=new Date(monthKey+"-01T12:00:00Z");
-    $("quota-month").textContent=new Intl.DateTimeFormat("es-ES",{month:"long",year:"numeric",timeZone:"Europe/Madrid"}).format(monthDate);
+    updateQuotaMonthSelector();
+    const monthKey=selectedQuotaMonth();
+    const futureMonth=monthKey!==madridMonthKey();
+    $("quota-month").textContent=futureMonth?"Previsión basada en FitBot · no verificada en AimHarder":"Saldo del mes actual";
     const records=historyRecords().filter(record=>record.date && record.date.slice(0,7)===monthKey);
-    const liveCurrent=state.liveCredits?.month===monthKey && state.liveCredits?.interpretation==="committed_over_total";
+    const liveCurrent=!futureMonth && state.liveCredits?.month===monthKey && state.liveCredits?.interpretation==="committed_over_total";
     const summaries=quotaPolicy.members.map(member=>{
       const personRecords=records.filter(record=>record.person_id===member.id);
       const count=(type)=>personRecords.filter(record=>
@@ -189,6 +229,10 @@
       const manual=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts?.[member.id]:null;
       const live=liveCurrent?state.liveCredits.members?.[member.id]:null;
       const quota=(category,limit)=>{
+        if(futureMonth) {
+          const upcoming=count(category==="classes"?"class":"open_box");
+          return {used:0,limit,source:"future_fitbot",committed:upcoming,upcoming,free:Math.max(0,limit-upcoming)};
+        }
         const b=live?.error===null?live.balances?.[category]:null;
         const valid=b?.verified===true && Number.isInteger(b.consumed) && b.consumed>=0
           && Number.isInteger(b.total) && b.total>0 && Number.isInteger(b.committed)
@@ -203,6 +247,8 @@
     });
     const renderQuota=(label,quota,registered)=>{
       const {used,limit,source}=quota;
+      if(source==="future_fitbot") return '<div class="quota-line"><span>'+label+'</span><strong>'+quota.committed+'/'+limit+' registradas en FitBot</strong></div>'+
+        '<small class="muted">Mes siguiente · saldo AimHarder sin verificar · '+quota.free+' plazas teóricas, sin contar reservas externas</small>';
       if(!Number.isInteger(used)) return '<div class="quota-line"><span>'+label+'</span><strong>Consumo sin verificar</strong></div>'+
         '<small class="muted">Sin lectura válida de AimHarder ni respaldo manual · '+registered+' reservas registradas en FitBot</small>';
       const exceeded=used>limit, reached=used===limit;
@@ -215,6 +261,10 @@
         '<small class="muted">'+detail+'</small>';
     };
     const compactQuota=(label,quota)=>{
+      if(quota.source==="future_fitbot") return '<div class="quota-mini"><span class="quota-mini-label">'+label+'</span>'+
+        '<strong>'+quota.committed+'/'+quota.limit+' en FitBot</strong>'+
+        '<span class="quota-mini-fraction">Nuevo mes · cupo independiente</span>'+
+        '<small>Saldo de AimHarder por verificar · '+quota.free+' plazas teóricas</small></div>';
       if(quota.source==="live") return '<div class="quota-mini"><span class="quota-mini-label">'+label+'</span>'+
         '<strong class="quota-mini-free">'+quota.free+' libres</strong>'+ 
         '<span class="quota-mini-fraction">'+quota.committed+'/'+quota.limit+' comprometidos</span>'+
@@ -237,7 +287,7 @@
         compactQuota("Open Box",member.openBoxQuota)+
         '</article>'
       ).join("");
-    $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly;
+    $("monthly-credits-form").hidden=state.monthlyCreditsReadOnly||futureMonth;
     const saved=state.monthlyCredits?.month===monthKey?state.monthlyCredits.counts:null;
     const values=[
       ["credits-person-1-classes", saved?.person_1?.classes],
@@ -644,6 +694,7 @@
       $("person").value=booking.person_id;
       $("activity").value=booking.name;
       $("class-date").value=booking.date;
+      $("class-date").dispatchEvent(new Event("change"));
       $("class-time").value=booking.time;
       $("schedule-button").textContent="Guardar cambios →";
       $("stop-editing").hidden=false;
