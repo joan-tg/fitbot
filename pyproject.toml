@@ -9,6 +9,7 @@ dependencies = [
     "pysocks>=1.7.1",
     "qstash",
     "requests>=2.32.3",
+    "google-auth>=2.35.0,<3",
 ]
 
 [dependency-groups]
