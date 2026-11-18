@@ -42,8 +42,6 @@ TARGETS = {
 CONFIRMED_STATUSES = {"booking_confirmed", "already_booked"}
 
 
-
-
 def _respond(handler, status, payload):
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
@@ -487,4 +485,3 @@ class handler(BaseHTTPRequestHandler):
                 "failed": sum(item["status"] == "failed" for item in results),
             },
         )
-
