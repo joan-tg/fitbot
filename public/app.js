@@ -293,8 +293,8 @@
       <td>${escapeHtml(b.name)}</td>
       <td>${escapeHtml(classDate(b.date,b.time))}</td>
       <td><span class="status-pill ${statusClass(b.status)}">${escapeHtml(statusName(b.status))}</span>${b.status==="booking_missed"?'<small class="status-detail">La tarea llegó después de los 30 minutos disponibles.</small>':""}</td>
-      <td>${escapeHtml(dateTime(b.recorded_at||b.updated_at||b.created_at))}</td>
-      <td>${b.id && ["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<div class="row-actions"><button class="edit-button" type="button" data-edit-id="${escapeHtml(b.id)}">Editar</button><button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">Cancelar</button></div>` : "—"}</td>
+      <td>${escapeHtml(dateTime(b.recorded_at||b.updated_at||b.created_at))}<small class="muted" style="display:block">ID: ${escapeHtml(String(b.id||"").slice(0,8))}…</small></td>
+      <td>${b.id && ["pending_schedule","schedule_failed","scheduling","scheduled"].includes(b.status) ? `<div class="row-actions"><button class="edit-button" type="button" data-edit-id="${escapeHtml(b.id)}">Editar</button><button class="cancel-button" type="button" data-cancel-id="${escapeHtml(b.id)}">${b.id==="95c09a6c64224815bbd65620beefcf61" && state.bookings.some(other=>other.id==="dd39cd88b67d4cc59b9607460bd7d45e"&&other.status==="scheduled")?"Cancelar duplicado":"Cancelar"}</button></div>` : "—"}</td>
     </tr>`).join("");
   }
   function calendarCategory(status) {
