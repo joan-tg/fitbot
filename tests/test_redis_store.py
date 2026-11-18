@@ -527,7 +527,15 @@ def test_atomic_slot_guard_preserves_idempotent_retries():
 
 def test_existing_slot_can_be_reused_after_cancellation():
     record = make_booking_record()
-    session = FakeSession([[1, json.dumps({"booking_id": record["id"], "fingerprint": hashlib.sha256(json.dumps({field: record[field] for field in ("person_id", "date", "time", "name")}, sort_keys=True).encode("utf-8")).hexdigest()})]])
+    fingerprint_source = {
+        field: record[field] for field in ("person_id", "date", "time", "name")
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    session = FakeSession(
+        [[1, json.dumps({"booking_id": record["id"], "fingerprint": fingerprint})]]
+    )
     redis = UpstashRedis(
         url="https://example.upstash.io",
         token="test-token",
