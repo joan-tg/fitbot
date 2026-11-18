@@ -418,9 +418,13 @@ def test_patch_binds_replacement_to_original_idempotency_key(monkeypatch):
 
     class FakeRedis:
         BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+        BOOKINGS_MAX_ITEMS = 500
 
         def get_booking(self, booking_id):
             return dict(previous)
+
+        def list_bookings(self, limit):
+            return [dict(previous)]
 
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     calls = []
@@ -453,9 +457,13 @@ def test_patch_rejects_a_different_key_for_already_replaced_booking(monkeypatch)
 
     class FakeRedis:
         BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+        BOOKINGS_MAX_ITEMS = 500
 
         def get_booking(self, booking_id):
             return dict(previous)
+
+        def list_bookings(self, limit):
+            return [dict(previous)]
 
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(
@@ -477,9 +485,13 @@ def test_patch_does_not_resurrect_cancelled_booking(monkeypatch):
 
     class FakeRedis:
         BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+        BOOKINGS_MAX_ITEMS = 500
 
         def get_booking(self, booking_id):
             return dict(previous)
+
+        def list_bookings(self, limit):
+            return [dict(previous)]
 
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(
@@ -502,9 +514,13 @@ def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatc
 
     class FakeRedis:
         BOOKING_ID_PATTERN = bookings_api.UpstashRedis.BOOKING_ID_PATTERN
+        BOOKINGS_MAX_ITEMS = 500
 
         def get_booking(self, booking_id):
             return dict(previous)
+
+        def list_bookings(self, limit):
+            return [dict(previous)]
 
         def update_booking_status(
             self,
