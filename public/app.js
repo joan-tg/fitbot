@@ -526,6 +526,25 @@
     } catch(error) { toast("Recuperación no completada: "+error.message); }
     finally { button.disabled=false; }
   });
+  $("calendar-backfill").addEventListener("click",async()=>{
+    if(state.environment!=="production"||state.bookingMode!=="live"){
+      toast("Solo disponible para reservas reales en Production.");return;
+    }
+    if(!confirm("¿Recuperar únicamente los eventos de Google Calendar para Joan del sábado 21/11: Strength & Conditioning 12:00 y Open Box 13:00? No se reservarán ni modificarán clases en AimHarder. La operación puede repetirse sin duplicar eventos.")) return;
+    const button=$("calendar-backfill");button.disabled=true;
+    try {
+      const data=await request("/api/calendar_backfill",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({booking_ids:[
+          "ea704a49bb73449d9974ca007f50e14b",
+          "dd39cd88b67d4cc59b9607460bd7d45e"
+        ]})
+      });
+      toast("Google Calendar: "+data.created+" creados · "+data.already_exists+" existentes · "+data.failed+" errores.");
+    } catch(error) { toast("No se han recuperado los eventos: "+error.message); }
+    finally {button.disabled=false;}
+  });
   $("logout-button").addEventListener("click",()=>{
     state.token="";sessionStorage.removeItem("fitbot_admin_token");$("admin-token").value="";state.bookingMode="unknown";showDashboard(false);
   });
