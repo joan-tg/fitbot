@@ -472,3 +472,69 @@ def test_booking_lock_identity_is_scoped_by_member_for_dynamic_bookings():
 
     assert UpstashRedis.booking_key(first) != UpstashRedis.booking_key(second)
     assert UpstashRedis.booking_key(BOOKING) == UpstashRedis.booking_key(dict(BOOKING))
+
+
+def test_atomic_slot_guard_blocks_same_person_and_time_across_activities():
+    from redis_store import BookingSlotConflict
+
+    record = make_booking_record(
+        id="c" * 32,
+        date="2026-11-21",
+        time="13:00",
+        name="Gymnastic",
+    )
+    session = FakeSession([[-2, "a" * 32]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+
+    with pytest.raises(BookingSlotConflict, match="misma fecha y hora"):
+        redis.create_booking_idempotent(record, "client-request-0002")
+
+    command = session.calls[0][1]["json"]
+    assert "b.person_id == ARGV[6]" in command[1]
+    assert "b.date == ARGV[7]" in command[1]
+    assert "b.time == ARGV[8]" in command[1]
+    assert "b.name ==" not in command[1]
+    assert "b.status ~= 'cancelled'" in command[1]
+    assert "b.status ~= 'replaced'" in command[1]
+    assert command[-3:] == ["person_1", "2026-11-21", "13:00"]
+
+
+def test_atomic_slot_guard_preserves_idempotent_retries():
+    record = make_booking_record()
+    fingerprint_source = {
+        field: record[field] for field in ("person_id", "date", "time", "name")
+    }
+    fingerprint = hashlib.sha256(
+        json.dumps(fingerprint_source, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    previous = json.dumps({"booking_id": record["id"], "fingerprint": fingerprint})
+    session = FakeSession([[0, previous]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+    created, booking_id = redis.create_booking_idempotent(record, "client-request-0003")
+    assert not created
+    assert booking_id == record["id"]
+    script = session.calls[0][1]["json"][1]
+    assert script.index("local existing") < script.index("local ids")
+
+
+def test_existing_slot_can_be_reused_after_cancellation():
+    record = make_booking_record()
+    session = FakeSession([[1, json.dumps({"booking_id": record["id"], "fingerprint": hashlib.sha256(json.dumps({field: record[field] for field in ("person_id", "date", "time", "name")}, sort_keys=True).encode("utf-8")).hexdigest()})]])
+    redis = UpstashRedis(
+        url="https://example.upstash.io",
+        token="test-token",
+        session=session,
+    )
+    created, _ = redis.create_booking_idempotent(record, "client-request-0004")
+    assert created
+    script = session.calls[0][1]["json"][1]
+    for status in ("cancelled", "replaced", "booking_missed"):
+        assert "b.status ~= '" + status + "'" in script
