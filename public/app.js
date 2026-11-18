@@ -355,6 +355,21 @@
   function calendarMonthKey(year, month) {
     return year+"-"+String(month+1).padStart(2,"0");
   }
+  function calendarAllowedMonth(monthKey, currentMonth) {
+    return monthKey===currentMonth || monthKey===nextMonthKey(currentMonth);
+  }
+  function clampCalendarMonth() {
+    const current=madridMonthKey();
+    const active=calendarMonthKey(state.calendarYear,state.calendarMonth);
+    if(!calendarAllowedMonth(active,current)) {
+      const [year,month]=current.split("-").map(Number);
+      state.calendarYear=year;
+      state.calendarMonth=month-1;
+      state.selectedCalendarDate=null;
+    }
+    $("calendar-prev").disabled=calendarMonthKey(state.calendarYear,state.calendarMonth)===current;
+    $("calendar-next").disabled=calendarMonthKey(state.calendarYear,state.calendarMonth)===nextMonthKey(current);
+  }
   function calendarDateKey(year, month, day) {
     return calendarMonthKey(year,month)+"-"+String(day).padStart(2,"0");
   }
@@ -381,6 +396,7 @@
     return item.status==="mixed"?"Estados diferentes":statusName(item.status);
   }
   function renderCalendar() {
+    clampCalendarMonth();
     const year=state.calendarYear, month=state.calendarMonth;
     const first=new Date(year,month,1);
     const daysInMonth=new Date(year,month+1,0).getDate();
@@ -432,6 +448,7 @@
   }
   function setCalendarMonth(year,month) {
     const date=new Date(year,month,1);
+    if(!calendarAllowedMonth(calendarMonthKey(date.getFullYear(),date.getMonth()),madridMonthKey())) return;
     state.calendarYear=date.getFullYear();state.calendarMonth=date.getMonth();
     state.selectedCalendarDate=null;
     renderCalendar();
@@ -650,7 +667,10 @@
   $("show-history").addEventListener("click",()=>setAgendaView("history"));
   $("calendar-prev").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth-1));
   $("calendar-next").addEventListener("click",()=>setCalendarMonth(state.calendarYear,state.calendarMonth+1));
-  $("calendar-today").addEventListener("click",()=>setCalendarMonth(new Date().getFullYear(),new Date().getMonth()));
+  $("calendar-today").addEventListener("click",()=>{
+    const [year,month]=madridMonthKey().split("-").map(Number);
+    setCalendarMonth(year,month-1);
+  });
   $("calendar-grid").addEventListener("click",event=>{
     const day=event.target.closest("[data-calendar-date]");
     if(!day || !day.dataset.calendarDate) return;
