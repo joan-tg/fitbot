@@ -18,7 +18,6 @@ class BookingSlotConflict(ValueError):
     """A person already has an active booking in the same timeslot."""
 
 
-
 class UpstashRedis:
     RESULTS_KEY = "fitbot:booking_results"
     RESULTS_TTL_SECONDS = 90 * 24 * 60 * 60
