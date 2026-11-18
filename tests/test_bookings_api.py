@@ -422,6 +422,9 @@ def test_patch_binds_replacement_to_original_idempotency_key(monkeypatch):
         def get_booking(self, booking_id):
             return dict(previous)
 
+        def list_bookings(self, limit):
+            return [dict(previous)]
+
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     calls = []
     monkeypatch.setattr(
@@ -457,6 +460,9 @@ def test_patch_rejects_a_different_key_for_already_replaced_booking(monkeypatch)
         def get_booking(self, booking_id):
             return dict(previous)
 
+        def list_bookings(self, limit):
+            return [dict(previous)]
+
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(
         bookings_api,
@@ -480,6 +486,9 @@ def test_patch_does_not_resurrect_cancelled_booking(monkeypatch):
 
         def get_booking(self, booking_id):
             return dict(previous)
+
+        def list_bookings(self, limit):
+            return [dict(previous)]
 
     monkeypatch.setattr(bookings_api, "UpstashRedis", FakeRedis)
     monkeypatch.setattr(
@@ -505,6 +514,9 @@ def test_patch_records_idempotency_hash_when_replacing_active_booking(monkeypatc
 
         def get_booking(self, booking_id):
             return dict(previous)
+
+        def list_bookings(self, limit):
+            return [dict(previous)]
 
         def update_booking_status(
             self,
