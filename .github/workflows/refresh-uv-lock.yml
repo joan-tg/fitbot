@@ -3,7 +3,7 @@ name: Refresh uv lockfile
 on:
   push:
     branches:
-      - fix/google-calendar-production-dependency-backfill
+      - feature/vercel-qstash-webhook
     paths:
       - "pyproject.toml"
       - ".github/workflows/refresh-uv-lock.yml"
@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/google-calendar-production-dependency-backfill
+          ref: feature/vercel-qstash-webhook
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: false
