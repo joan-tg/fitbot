@@ -1,35 +1,36 @@
-name: Autoformat calendar recovery fix
+name: Refresh uv lockfile
 
 on:
   push:
     branches:
-      - fix/google-calendar-production-dependency-backfill
+      - feature/vercel-qstash-webhook
     paths:
+      - "pyproject.toml"
       - ".github/workflows/refresh-uv-lock.yml"
 
 permissions:
   contents: write
 
 jobs:
-  autoformat:
+  refresh-lock:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: fix/google-calendar-production-dependency-backfill
+          ref: feature/vercel-qstash-webhook
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: false
-      - name: Format recovery files
-        run: uvx ruff==0.17.5 format api/calendar_backfill.py tests/test_calendar_backfill.py
-      - name: Commit formatting
+      - name: Regenerate lockfile from pyproject.toml
+        run: uv lock
+      - name: Commit updated lockfile
         run: |
-          if git diff --quiet -- api/calendar_backfill.py tests/test_calendar_backfill.py; then
-            echo "No format changes"
+          if git diff --quiet -- uv.lock; then
+            echo "uv.lock is already up to date."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add api/calendar_backfill.py tests/test_calendar_backfill.py
-          git commit -m "Format targeted calendar backfill"
+          git add uv.lock
+          git commit -m "Update uv.lock dependencies"
           git push
