@@ -14,6 +14,11 @@ class RedisUnavailable(RuntimeError):
     pass
 
 
+class BookingSlotConflict(ValueError):
+    """A person already has an active booking in the same timeslot."""
+
+
+
 class UpstashRedis:
     RESULTS_KEY = "fitbot:booking_results"
     RESULTS_TTL_SECONDS = 90 * 24 * 60 * 60
@@ -133,6 +138,17 @@ class UpstashRedis:
         script = (
             "local existing = redis.call('GET', KEYS[3]); "
             "if existing then return {0, existing} end; "
+            "local ids = redis.call('ZRANGE', KEYS[2], 0, -1); "
+            "for _, id in ipairs(ids) do "
+            "local raw = redis.call('GET', 'fitbot:bookings:' .. id); "
+            "if raw then "
+            "local b = cjson.decode(raw); "
+            "if b.person_id == ARGV[6] and b.date == ARGV[7] "
+            "and b.time == ARGV[8] "
+            "and b.status ~= 'cancelled' and b.status ~= 'replaced' "
+            "and b.status ~= 'booking_missed' and b.status ~= 'booking_failed' "
+            "and b.status ~= 'class_not_found' and b.status ~= 'incorrect_credentials' "
+            "then return {-2, id} end end end; "
             "if redis.call('EXISTS', KEYS[1]) == 1 then return {-1, ''} end; "
             "redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[4]); "
             "redis.call('ZADD', KEYS[2], ARGV[2], ARGV[5]); "
@@ -156,10 +172,18 @@ class UpstashRedis:
                 request_record,
                 self.BOOKINGS_TTL_SECONDS,
                 record["id"],
+                record["person_id"],
+                record["date"],
+                record["time"],
             ]
         )
         if not isinstance(result, list) or len(result) != 2:
             raise RedisUnavailable("Unexpected idempotent booking response")
+        if result[0] == -2:
+            raise BookingSlotConflict(
+                "Ya existe una reserva para esta persona en la misma fecha y hora. "
+                "Cancela o edita primero la programación existente."
+            )
         if result[0] == -1:
             raise RedisUnavailable("Booking ID collision")
         try:
