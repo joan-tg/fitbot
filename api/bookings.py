@@ -361,7 +361,9 @@ class handler(BaseHTTPRequestHandler):
         except PermissionError as error:
             return _respond(self, 403, {"error": str(error)})
         except BookingSlotConflict as error:
-            return _respond(self, 409, {"error": str(error), "error_code": "booking_slot_conflict"})
+            return _respond(
+                self, 409, {"error": str(error), "error_code": "booking_slot_conflict"}
+            )
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
             return _respond(self, 400, {"error": str(error)})
         except requests.RequestException as error:
@@ -557,7 +559,9 @@ class handler(BaseHTTPRequestHandler):
         except PermissionError as error:
             return _respond(self, 403, {"error": str(error)})
         except BookingSlotConflict as error:
-            return _respond(self, 409, {"error": str(error), "error_code": "booking_slot_conflict"})
+            return _respond(
+                self, 409, {"error": str(error), "error_code": "booking_slot_conflict"}
+            )
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
             return _respond(self, 400, {"error": str(error)})
         except requests.RequestException:
