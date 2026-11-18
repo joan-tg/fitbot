@@ -533,8 +533,8 @@
     if(!confirm("¿Recuperar únicamente los eventos de Google Calendar para Joan del sábado 21/11: Strength & Conditioning 12:00 y Open Box 13:00? No se reservarán ni modificarán clases en AimHarder. La operación puede repetirse sin duplicar eventos.")) return;
     const button=$("calendar-backfill");button.disabled=true;
     try {
-      const data=await request("/api/calendar_backfill",{
-        method:"POST",
+      const data=await request("/api/reconcile",{
+        method:"PUT",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({booking_ids:[
           "ea704a49bb73449d9974ca007f50e14b",

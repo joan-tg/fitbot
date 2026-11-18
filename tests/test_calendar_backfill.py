@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import api.calendar_backfill as backfill
+import api.reconcile as backfill
 
 
 def booking(booking_id):
@@ -41,7 +41,7 @@ class Request:
         pass
 
     def run(self):
-        backfill.handler.do_POST(self)
+        backfill.handler.do_PUT(self)
         return json.loads(self.wfile.getvalue().decode())
 
 
