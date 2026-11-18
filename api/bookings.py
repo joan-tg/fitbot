@@ -18,7 +18,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from redis_store import RedisUnavailable, UpstashRedis  # noqa: E402
+from redis_store import BookingSlotConflict, RedisUnavailable, UpstashRedis  # noqa: E402
 from scheduled import load_config  # noqa: E402
 
 logger = logging.getLogger("fitbot.bookings")
@@ -360,6 +360,8 @@ class handler(BaseHTTPRequestHandler):
             )
         except PermissionError as error:
             return _respond(self, 403, {"error": str(error)})
+        except BookingSlotConflict as error:
+            return _respond(self, 409, {"error": str(error), "error_code": "booking_slot_conflict"})
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
             return _respond(self, 400, {"error": str(error)})
         except requests.RequestException as error:
@@ -456,6 +458,25 @@ class handler(BaseHTTPRequestHandler):
                 idempotency_key.encode("utf-8")
             ).hexdigest()
             previous_status = previous.get("status")
+            # Reject a conflicting edit before marking the original as replaced.
+            # The Redis create operation also checks this atomically.
+            for other in redis.list_bookings(limit=UpstashRedis.BOOKINGS_MAX_ITEMS):
+                if other.get("id") == old_id:
+                    continue
+                if other.get("status") in (
+                    "cancelled", "replaced", "booking_missed",
+                    "booking_failed", "class_not_found", "incorrect_credentials",
+                ):
+                    continue
+                if (
+                    other.get("person_id") == prepared_booking["person_id"]
+                    and other.get("date") == prepared_booking["date"]
+                    and other.get("time") == prepared_booking["time"]
+                ):
+                    raise BookingSlotConflict(
+                        "Ya existe otra reserva para esta persona en la misma fecha y hora. "
+                        "Cancela o edita primero esa programación."
+                    )
 
             if previous_status in allowed:
                 replaced_at = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(
@@ -535,6 +556,8 @@ class handler(BaseHTTPRequestHandler):
             )
         except PermissionError as error:
             return _respond(self, 403, {"error": str(error)})
+        except BookingSlotConflict as error:
+            return _respond(self, 409, {"error": str(error), "error_code": "booking_slot_conflict"})
         except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as error:
             return _respond(self, 400, {"error": str(error)})
         except requests.RequestException:
