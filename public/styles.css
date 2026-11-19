@@ -189,3 +189,11 @@
   #dashboard[data-view="simple"] .quota-month-controls select{font-size:11px}
   #dashboard[data-view="simple"] .stats-grid{margin-bottom:9px}
 }
+
+/* Preserve a single-line toolbar on phones in either view. */
+@media(max-width:680px){
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .detail-toggle,
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .logout-toggle{width:34px;height:34px;padding:0}
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .detail-toggle-label,
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .logout-label{display:none}
+}
