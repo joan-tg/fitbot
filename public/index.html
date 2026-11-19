@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#101827">
   <meta name="description" content="Panel privado de automatización de reservas FitBot">
-  <title>FitBot · Panel de control</title>
+  <title>FitBot · Reservas StudioCrossFit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -21,9 +21,16 @@
         <span>fit<span class="brand-light">bot</span></span>
       </a>
       <div class="topbar-right">
-        <span class="environment" id="environment-indicator"><i></i> Comprobando entorno…</span>
+        <span class="environment" id="environment-indicator" hidden><i></i> <span id="environment-label"></span></span>
+        <button class="icon-button detail-toggle" id="toggle-detail" type="button" aria-pressed="false" aria-label="Abrir visión detallada" title="Abrir visión detallada" hidden>
+          <svg class="detail-toggle-symbol" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M9 9h12"/></svg>
+          <span class="detail-toggle-label">Visión detallada de la app</span>
+        </button>
         <button class="icon-button" id="refresh-button" type="button" aria-label="Actualizar datos" title="Actualizar datos">↻</button>
-        <button class="text-button" id="logout-button" type="button" hidden>Desconectar</button>
+        <button class="icon-button logout-toggle" id="logout-button" type="button" aria-label="Desconectar" title="Desconectar" hidden>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7"/></svg>
+          <span class="logout-label">Desconectar</span>
+        </button>
       </div>
     </header>
 
@@ -43,19 +50,19 @@
     <div id="dashboard" data-view="simple" hidden>
       <section class="welcome-row">
         <div>
-          <div class="eyebrow">PANEL DE CONTROL</div>
-          <h1>Hola. Vamos a <span>entrenar.</span></h1>
-          <p class="muted">Gestiona las reservas de tus cuentas de StudioCrossFit.</p>
+          <div class="eyebrow detailed-only">PANEL DE CONTROL</div>
+          <h1><span class="simple-only">Programa reservas de StudioCrossFit</span><span class="detailed-only">Hola. Vamos a <span>entrenar.</span></span></h1>
+          <p class="muted detailed-only">Gestiona las reservas de tus cuentas de StudioCrossFit.</p>
         </div>
-        <div class="welcome-controls"><div class="mode-card"><span class="mode-dot"></span><div><strong id="booking-mode-title">Consultando estado</strong><small id="booking-mode-detail">Verificando configuración de reservas</small></div></div><button id="toggle-detail" class="outline-button view-toggle" type="button" aria-pressed="false">Visión detallada de la app</button></div>
+        <div class="welcome-controls"><div class="mode-card" id="booking-mode-card" data-mode="unknown" role="status"><span class="mode-dot"></span><div><strong id="booking-mode-title">Consultando estado</strong><small id="booking-mode-detail">Verificando configuración de reservas</small></div></div></div>
       </section>
 
       <section id="sync-notice" class="sync-notice" role="status" aria-live="polite" hidden></section>
 
       <section class="stats-grid" aria-label="Resumen">
-        <article class="stat-card"><span class="stat-label">PROGRAMADAS</span><strong id="stat-scheduled">—</strong><small>Esperando su apertura</small></article>
-        <article class="stat-card"><span class="stat-label">SIMULADAS</span><strong id="stat-dry-run">—</strong><small>Procesadas sin reservar</small></article>
-        <article class="stat-card"><span class="stat-label">INCIDENCIAS</span><strong id="stat-errors">—</strong><small>Requieren revisión</small></article>
+        <article class="stat-card" data-stat="scheduled"><span class="stat-label">PROGRAMADAS</span><strong id="stat-scheduled">—</strong><small>Esperando su apertura</small></article>
+        <article class="stat-card" data-stat="simulated"><span class="stat-label">SIMULADAS</span><strong id="stat-dry-run">—</strong><small>Procesadas sin reservar</small></article>
+        <article class="stat-card" data-stat="incidents"><span class="stat-label">INCIDENCIAS</span><strong id="stat-errors">—</strong><small>Requieren revisión</small></article>
       </section>
 
       <section class="panel quota-panel" aria-labelledby="quota-heading">

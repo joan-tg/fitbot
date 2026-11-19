@@ -139,3 +139,61 @@
 .quota-month-controls select{color:var(--text);background:#0d1726;border:1px solid #304158;border-radius:8px;padding:7px 9px;font:600 11px "DM Sans",sans-serif;max-width:100%;min-height:34px}
 .quota-month-controls #quota-month{flex-basis:100%;text-align:right}
 @media(max-width:560px){.quota-heading{align-items:flex-start;gap:8px;flex-direction:column}.quota-month-controls{justify-content:flex-start;width:100%}.quota-month-controls #quota-month{text-align:left}}
+
+/* Compact everyday interface. Detailed view keeps its diagnostic information. */
+.detail-toggle{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex-shrink:0}
+.logout-toggle{display:inline-flex;align-items:center;justify-content:center;gap:8px;flex-shrink:0}
+.detail-toggle-label,.logout-label{font-size:11px;font-weight:600;white-space:nowrap}
+.shell:has(#dashboard[data-view="simple"]:not([hidden])) .detail-toggle,
+.shell:has(#dashboard[data-view="simple"]:not([hidden])) .logout-toggle{width:34px;height:34px;padding:0}
+.shell:has(#dashboard[data-view="simple"]:not([hidden])) .detail-toggle-label,
+.shell:has(#dashboard[data-view="simple"]:not([hidden])) .logout-label{display:none}
+.shell:has(#dashboard[data-view="detailed"]:not([hidden])) .detail-toggle,
+.shell:has(#dashboard[data-view="detailed"]:not([hidden])) .logout-toggle{width:auto;min-width:34px;padding:0 10px}
+.shell:has(#dashboard[data-view="detailed"]:not([hidden])) .detail-toggle-label,
+.shell:has(#dashboard[data-view="detailed"]:not([hidden])) .logout-label{display:inline}
+.topbar-right{gap:9px;flex-shrink:0}
+.topbar .environment[hidden]{display:none!important}
+#dashboard .simple-only{display:none}
+#dashboard[data-view="simple"] .simple-only{display:inline}
+#dashboard[data-view="simple"] .detailed-only{display:none!important}
+#dashboard[data-view="simple"] .welcome-row{padding:18px 0 12px;align-items:center;gap:12px}
+#dashboard[data-view="simple"] .welcome-row h1{font:700 clamp(18px,3.4vw,25px)/1.2 Manrope,sans-serif;letter-spacing:-.55px;margin:0}
+#dashboard[data-view="simple"] .welcome-controls:has(.mode-card[data-mode="live"]){display:none}
+#dashboard[data-view="simple"] .mode-card[data-mode="live"]{display:none}
+#dashboard[data-view="simple"] .mode-card{min-width:0;width:auto;padding:9px 12px;border-color:#7b4f36;background:#30251d}
+#dashboard[data-view="simple"] .mode-card .mode-dot{background:var(--amber);box-shadow:none}
+#dashboard[data-view="simple"] .mode-card small{max-width:300px}
+#dashboard[data-view="simple"] .stats-grid{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}
+#dashboard[data-view="simple"] .stat-card{display:flex;align-items:baseline;gap:7px;padding:7px 11px;border-radius:9px;box-shadow:none}
+#dashboard[data-view="simple"] .stat-card .stat-label{font-size:10px;letter-spacing:.3px}
+#dashboard[data-view="simple"] .stat-card strong{font:700 15px Manrope,sans-serif;margin:0}
+#dashboard[data-view="simple"] .stat-card small{display:none}
+#dashboard[data-view="simple"] .stat-card[data-stat="simulated"],
+#dashboard[data-view="simple"] .stat-card[data-stat="incidents"][data-empty="true"]{display:none}
+#dashboard[data-view="simple"] .stat-card[data-stat="incidents"]:not([data-empty="true"]){border-color:#7a464c}
+#dashboard[data-view="simple"] .quota-heading{justify-content:flex-start;gap:8px;flex-wrap:nowrap}
+#dashboard[data-view="simple"] .quota-heading>div:first-child{display:none}
+#dashboard[data-view="simple"] .quota-month-controls{display:flex;align-items:center;justify-content:flex-start;flex-wrap:nowrap;gap:9px;width:100%}
+#dashboard[data-view="simple"] .quota-month-controls label{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap}
+#dashboard[data-view="simple"] .quota-month-controls label::after{content:":"}
+#dashboard[data-view="simple"] .quota-month-controls select{flex:0 1 auto;min-width:0;font-size:12px;padding:6px 8px}
+#dashboard[data-view="simple"] #quota-month{display:none}
+@media(max-width:560px){
+  .topbar{gap:9px}
+  .topbar-right{gap:6px}
+  .topbar .brand{gap:6px;font-size:19px}
+  #dashboard[data-view="simple"] .welcome-row{padding:13px 0 9px}
+  #dashboard[data-view="simple"] .welcome-row h1{font-size:18px;letter-spacing:-.4px}
+  #dashboard[data-view="simple"] .quota-month-controls{gap:7px}
+  #dashboard[data-view="simple"] .quota-month-controls select{font-size:11px}
+  #dashboard[data-view="simple"] .stats-grid{margin-bottom:9px}
+}
+
+/* Preserve a single-line toolbar on phones in either view. */
+@media(max-width:680px){
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .detail-toggle,
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .logout-toggle{width:34px;height:34px;padding:0}
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .detail-toggle-label,
+  .shell:has(#dashboard[data-view="detailed"]:not([hidden])) .logout-label{display:none}
+}

@@ -34,20 +34,32 @@
   function showDashboard(visible) {
     $("auth-panel").hidden=visible; $("dashboard").hidden=!visible;
     $("logout-button").hidden=!visible; $("refresh-button").hidden=!visible;
+    $("toggle-detail").hidden=!visible;
+    if(!visible) $("environment-indicator").hidden=true;
+    else renderEnvironment();
+  }
+  function renderEnvironment() {
+    const preview=state.environment==="preview";
+    const unverified=state.environment!=="production" && !preview;
+    $("environment-label").textContent=preview?"PREVIEW":unverified?"ENTORNO SIN VERIFICAR":"";
+    $("environment-indicator").hidden=$("dashboard").hidden || !(preview||unverified);
   }
   function renderMode() {
     const preview=state.environment==="preview";
-    const text=preview?"PREVIEW · SOLO LECTURA":state.environment==="production"?"PRODUCTION":"ENTORNO NO VERIFICADO";
-    $("environment-indicator").lastChild.textContent=" "+text;
-    const mode=preview?"Solo lectura":state.bookingMode==="live"?"Reservas reales activadas":state.bookingMode==="simulation"?"Modo simulación":"Estado no verificado";
+    renderEnvironment();
+    const mode=preview?"Preview · solo lectura":state.bookingMode==="live"?"Reservas reales activadas":state.bookingMode==="simulation"?"Sin reservas reales · Simulación":"Estado no verificado";
     $("booking-mode-title").textContent=mode;
-    $("booking-mode-detail").textContent=preview?"No se pueden programar reservas desde Preview":state.bookingMode==="live"?"Las programaciones ejecutan reservas reales":"No se puede confirmar la activación de reservas reales";
+    $("booking-mode-detail").textContent=preview?"No se pueden programar reservas desde Preview":state.bookingMode==="live"?"Las programaciones ejecutan reservas reales":state.bookingMode==="simulation"?"DRY_RUN=true · no se reservarán clases en AimHarder":"No se puede confirmar la activación de reservas reales";
+    $("booking-mode-card").dataset.mode=preview?"preview":state.bookingMode;
     $("schedule-button").disabled=preview||state.bookingMode==="unknown";
   }
   function setView(detailed) {
     state.detailed=Boolean(detailed);
     $("dashboard").dataset.view=state.detailed?"detailed":"simple";
-    $("toggle-detail").textContent=state.detailed?"Volver a vista sencilla":"Visión detallada de la app";
+    const toggleLabel=state.detailed?"Volver a vista sencilla":"Abrir visión detallada";
+    $("toggle-detail").querySelector(".detail-toggle-label").textContent=toggleLabel;
+    $("toggle-detail").setAttribute("aria-label",toggleLabel);
+    $("toggle-detail").title=toggleLabel;
     $("toggle-detail").setAttribute("aria-pressed",String(state.detailed));
     try { localStorage.setItem("fitbot_detailed_view",state.detailed?"1":"0"); } catch (_) {}
     setAgendaView(state.detailed?"history":"calendar");
@@ -154,7 +166,9 @@
     const counts = state.bookings.reduce((acc,b)=>{acc[b.status]=(acc[b.status]||0)+1;return acc;},{});
     $("stat-scheduled").textContent=counts.scheduled||counts.pending_schedule||0;
     $("stat-dry-run").textContent=counts.dry_run||0;
-    $("stat-errors").textContent=(counts.schedule_failed||0)+(counts.booking_failed||0)+(counts.outcome_unconfirmed||0)+(counts.booking_missed||0);
+    const errors=(counts.schedule_failed||0)+(counts.booking_failed||0)+(counts.outcome_unconfirmed||0)+(counts.booking_missed||0);
+    $("stat-errors").textContent=errors;
+    document.querySelector('[data-stat="incidents"]').dataset.empty=String(errors===0);
   }
   const quotaPolicy = {
     countedStatuses: new Set(["scheduled","processing","booking_confirmed","already_booked"]),
