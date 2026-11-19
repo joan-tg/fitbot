@@ -829,4 +829,12 @@
   if (state.token) {
     connect(state.token).catch((error)=>{showDashboard(false);$("auth-error").textContent=error.message;});
   } else showDashboard(false);
+  // Installable Android PWA: no offline caching of authenticated bookings.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load",()=>{
+      navigator.serviceWorker.register("/sw.js").catch(()=>{
+        // The website remains fully usable if service workers are unavailable.
+      });
+    });
+  }
 })();
