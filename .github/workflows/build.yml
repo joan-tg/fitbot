@@ -29,6 +29,8 @@ jobs:
         run: node --check public/app.js
       - name: Test month-aware quota logic
         run: node tests/test_quota_month.cjs
+      - name: Test compact simple view and safety indicators
+        run: node tests/test_simple_view.cjs
 
   tests:
     name: Run complete test suite
