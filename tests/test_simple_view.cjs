@@ -73,6 +73,6 @@ assert.ok(css.includes('#dashboard[data-view="simple"] #quota-month{display:none
 assert.ok(css.includes('.mode-card[data-mode="live"]{display:none}'),"Normal live status should not clutter simple mode");
 assert.ok(css.includes('.stat-card[data-stat="simulated"]'),"Simulation stat should be hidden in simple mode");
 assert.ok(css.includes('.stat-card[data-stat="incidents"][data-empty="true"]'),"Zero incidents should be hidden");
-assert.ok(css.includes('.detail-toggle-label{display:none}'),"Compact details icon not configured");
+assert.ok(css.includes(' .detail-toggle-label,') && css.includes('.logout-label{display:none}'),"Compact details icon not configured");
 assert.ok(css.includes('.logout-label{display:none}'),"Compact logout icon not configured");
 console.log("Simple view: environment, DRY_RUN, permissions and compact layout checks passed");
